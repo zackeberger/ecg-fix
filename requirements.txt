@@ -1,0 +1,16 @@
+numpy
+pandas
+scipy
+scikit-learn
+torch
+torchaudio
+torchvision
+matplotlib
+tqdm
+wfdb
+neurokit2
+einops
+timm
+transformers
+omegaconf
+PyYAML

@@ -1,0 +1,16 @@
+{
+  "raw_data_dir": "./benchmark_data/raw",
+  "processed_dir": "./benchmark_data/processed",
+  "embeddings_dir": "./benchmark_data/embeddings",
+  "results_dir": "./benchmark_data/results",
+  "comparison_dir": "./benchmark_data/comparisons",
+  "model_weights_dir": "./model_weights",
+  "physionet_dir": "./physionet.org/files",
+  "dataset_roots": {
+    "PTBXL": "./physionet.org/files/ptb-xl/1.0.3",
+    "PTBXL_C": "./physionet.org/files/ptb-xl/1.0.3",
+    "CPSC": "./physionet.org/files/challenge-2020/1.0.2/training/cpsc_2018",
+    "CSN": "./physionet.org/files/ecg-arrhythmia/1.0.0",
+    "ECHO_NEXT": "./physionet.org/files/echonext/1.1.0"
+  }
+}
