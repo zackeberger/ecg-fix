@@ -1,9 +1,9 @@
 {
-  "raw_data_dir": "./benchmark_data/raw",
-  "processed_dir": "./benchmark_data/processed",
-  "embeddings_dir": "./benchmark_data/embeddings",
-  "results_dir": "./benchmark_data/results",
-  "comparison_dir": "./benchmark_data/comparisons",
+  "raw_data_dir": "./data/raw",
+  "processed_dir": "./data/processed",
+  "embeddings_dir": "./data/embeddings",
+  "results_dir": "./data/results",
+  "comparison_dir": "./data/comparisons",
   "model_weights_dir": "./model_weights",
   "physionet_dir": "./physionet.org/files",
   "dataset_roots": {

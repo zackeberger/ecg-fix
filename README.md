@@ -65,30 +65,8 @@ export ECG_BENCHMARK_CONFIG=configs/local.json
 
 ## Download Data
 
-Download the public datasets into the default config layout:
-
-```bash
-bash scripts/download_public_data.sh
-```
-
-EchoNext is a restricted PhysioNet dataset. If you have accepted its data use
-agreement, pass your PhysioNet username and enter your password when prompted:
-
-```bash
-bash scripts/download_public_data.sh --physionet-user YOUR_USERNAME
-```
-
-If you want to download only the open-access datasets first:
-
-```bash
-bash scripts/download_public_data.sh --skip-restricted
-```
-
-To download into a different `physionet_dir`:
-
-```bash
-bash scripts/download_public_data.sh --dir /path/to/physionet.org/files
-```
+bash scripts/download_all_public_data.sh --skip-restricted
+bash scripts/download_echonext.sh --physionet-user YOUR_USERNAME
 
 ## Data Workflow
 
