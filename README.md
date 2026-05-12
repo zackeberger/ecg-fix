@@ -5,16 +5,6 @@
 This repository contains the ECG representation benchmark used for preprocessing
 public ECG datasets, evaluating frozen embeddings with linear probes, and
 comparing model results with bootstrap/permutation statistics.
-
-The release workflow is:
-
-1. Preprocess datasets into local raw and processed benchmark files.
-2. Generate model embeddings.
-3. Run evaluation probes.
-4. Compare saved model results.
-
-All outputs are written to local files on your device. W&B is not required.
-
 ## Sources
 
 Datasets used by the public benchmark:
@@ -40,12 +30,6 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Copy the example config and edit the paths for your machine:
-
-```bash
-cp configs/local.example.json configs/local.json
-```
-
 Important config fields:
 
 - `physionet_dir`: base directory for downloaded PhysioNet datasets.
@@ -57,16 +41,16 @@ Important config fields:
 - `comparison_dir`: CSV outputs from pairwise model comparison.
 - `model_weights_dir`: pretrained checkpoint directory.
 
-You can pass the config on each command with `--config configs/local.json` or set:
-
-```bash
-export ECG_BENCHMARK_CONFIG=configs/local.json
-```
+You can pass the config on each command with `--config configs/config.json`
 
 ## Download Data
 
 bash scripts/download_all_public_data.sh --skip-restricted
 bash scripts/download_echonext.sh --physionet-user YOUR_USERNAME
+
+## Download Models
+huggingface-cli download doprakah/ecg-fix-weights \
+  --local-dir model_weights2
 
 ## Data Workflow
 
