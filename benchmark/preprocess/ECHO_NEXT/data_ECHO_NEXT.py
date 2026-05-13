@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import Dataset
 from typing import Tuple, List, Dict, Callable, Optional
 from benchmark.preprocess.utils import *
-from benchmark.config import load_config
 
 
 class EchoNextNPYDataset(Dataset):
@@ -29,8 +28,8 @@ class EchoNextNPYDataset(Dataset):
         if split == "valid":
             split = "val"
         config = load_config()
-        root_dir = root_dir or config.raw_data_dir
-        meta_path = meta_path or os.path.join(config.processed_dir, "echonext_metadata_final.csv")
+        root_dir = root_dir or config["raw_data_dir"]
+        meta_path = meta_path or os.path.join(config["processed_dir"], "echonext_metadata_final.csv")
         assert split in {"train", "val", "test"}
 
         self.root_dir = root_dir

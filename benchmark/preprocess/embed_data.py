@@ -1,5 +1,4 @@
 import os
-os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 import copy
 import json
 import math
@@ -23,14 +22,14 @@ from benchmark.preprocess.PTBXL_C.data_PTBXL_C import PTBXL_C_NPYDataset
 DEFAULT_DATASETS = [
     # "ECHO_NEXT",
     "PTBXL_form",
-    "PTBXL_super",
-    "PTBXL_sub",
-    "PTBXL_rhythm",
-    "PTBXL_C_form",
-    "PTBXL_C_rhythm",
-    "PTBXL_C_sub",
-    "CPSC",
-    "CSN",
+  "PTBXL_super",
+  "PTBXL_sub",
+  "PTBXL_rhythm",
+#    "PTBXL_C_form",
+#    "PTBXL_C_rhythm",
+#    "PTBXL_C_sub",
+  "CPSC",
+   "CSN",
 ]
 
 CORE_MODELS = ["D_BETA", "MERL", "CLOCS","HeartLang", "KED"]
@@ -74,10 +73,10 @@ def build_random_model_names() -> tuple[list[str], list[str]]:
     random_resnet = []
     random_vit = []
 
-    for hz in ["500Hz", "250Hz", "100Hz"]:
-        for z_score in ["Z_score_sample", "Z_score_dataset", "Z_score_none"]:
-            for band in ["Add_Bandpass", "No_Bandpass"]:
-                for backbone in ["Vit", "Resnet18"]:
+    for hz in ["500Hz"]: #, "250Hz", "100Hz"
+        for z_score in ["Z_score_sample", "Z_score_none"]: #, "Z_score_dataset",
+            for band in ["No_Bandpass"]: #"Add_Bandpass", 
+                for backbone in [ "Resnet18"]: #"Vit",
                     name = f"Random_{hz}_{z_score}_{band}_{backbone}"
                     if backbone == "Resnet18":
                         random_resnet.append(name)
@@ -102,31 +101,26 @@ def build_all_models() -> list[str]:
     return CORE_MODELS + random_resnet + random_vit
 
 
-def chunk_list(items: Sequence[str], num_chunks: int) -> list[list[str]]:
-    if num_chunks <= 0:
-        raise ValueError("num_chunks must be > 0")
+def chunk_list(items: Sequence[str], chunk_size: int) -> list[list[str]]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be > 0")
 
-    chunk_size = math.ceil(len(items) / num_chunks)
-    return [list(items[i:i + chunk_size]) for i in range(0, len(items), chunk_size)]
+    return [
+        list(items[i:i + chunk_size])
+        for i in range(0, len(items), chunk_size)
+    ]
 
 
 def build_model_chunks(embedding_cfg: dict) -> list[list[str]]:
-    """Split all models into num_chunks groups and run every group sequentially."""
+    """Split all models into groups of chunk_size and run every group sequentially."""
     all_models = build_all_models()
-    return chunk_list(all_models, int(embedding_cfg["num_chunks"]))
-
+    return chunk_list(all_models, int(embedding_cfg["chunk_size"]))
 
 def set_seed(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
-    torch.use_deterministic_algorithms(True)
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
 
 
 def seed_worker(worker_id: int) -> None:
@@ -266,8 +260,21 @@ def save_embeddings_for_split(
 
     pending_models = {name: models[name] for name in pending_names}
 
+    for model_name, model in pending_models.items():
+        if "Z_score_dataset" in model_name:
+            global_mean = ds.ecg_metrics["global_mean"]
+            global_std = ds.ecg_metrics["global_std"]
+            model.set_stats(global_mean, global_std)
+
+
     generator = torch.Generator()
     generator.manual_seed(seed)
+
+    # from torch.utils.data import Subset
+    # max_examples = 1000
+
+    # n = min(max_examples, len(ds))
+    # ds = Subset(ds, range(n))
 
     loader = DataLoader(
         ds,
@@ -279,17 +286,12 @@ def save_embeddings_for_split(
         drop_last=False,
         generator=generator,
     )
-
-
-    for model_name, model in pending_models.items():
-        if "Z_score_dataset" in model_name:
-            global_mean = ds.ecg_metrics["global_mean"]
-            global_std = ds.ecg_metrics["global_std"]
-            model.set_stats(global_mean, global_std)
-
-    first_batch = next(iter(loader))
-    _, y0 = first_batch
-    y_shape = tuple(y0.cpu().numpy().shape[1:])
+    
+    _, y0 = ds[0]
+    if torch.is_tensor(y0):
+        y_shape = tuple(y0.cpu().numpy().shape)
+    else:
+        y_shape = tuple(np.asarray(y0).shape)
     n = len(ds)
 
     emb_mms = {}
@@ -306,7 +308,7 @@ def save_embeddings_for_split(
         y_mms[model_name] = open_memmap(
             os.path.join(split_dir, f"{model_name}_y.npy"),
             mode="w+",
-            dtype=np.float32,
+            dtype=np.uint8,
             shape=(n, *y_shape),
         )
 
@@ -314,7 +316,7 @@ def save_embeddings_for_split(
     for bx, by in tqdm(loader, desc=f"{dataset_name}/{split}", unit="batch"):
         b = bx.shape[0]
         bx = bx.to(device, non_blocking=True)
-        by_np = by.cpu().numpy().astype(np.float32, copy=False)
+        by_np = by.cpu().numpy().astype(np.uint8, copy=False)
 
         with torch.no_grad():
             for model_name, model in pending_models.items():
@@ -438,5 +440,3 @@ def embed_main(config) -> None:
     print("✅ Embedding export complete for all chunks.")
 
 
-if __name__ == "__main__":
-    main()

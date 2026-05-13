@@ -10,11 +10,11 @@ from benchmark.preprocess.CSN import p_CSN
 from benchmark.preprocess.PTBXL import p_PTBXL
 from benchmark.preprocess.PTBXL_C import p_PTBXL_C
 from benchmark.preprocess.format_dataset import format_main
-#from benchmark.preprocess.embed_data import embed_main
+from benchmark.preprocess.embed_data import embed_main
 import multiprocessing as mp
 
 
-def main(config):
+def main_preprocess(config):
     try:
         mp.set_start_method("spawn", force=True)
     except RuntimeError:
@@ -26,6 +26,6 @@ def main(config):
    # p_ECHO_NEXT.main(config)
     p_CSN.main(config)
     format_main(config)
-   # embed_main(config)
+    embed_main(config)
     print("All data processed")
 

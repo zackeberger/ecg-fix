@@ -21,6 +21,41 @@ def read_csv_required(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def processed_done_path(out_dir: str, task_name: str) -> str:
+    return os.path.join(out_dir, f"{task_name}.done.json")
+
+
+def processed_outputs_exist(out_dir: str, task_name: str) -> bool:
+    return (
+        os.path.exists(os.path.join(out_dir, f"{task_name}_metadata_final.csv"))
+        and os.path.exists(os.path.join(out_dir, f"{task_name}_label_prevalence.csv"))
+        and os.path.exists(os.path.join(out_dir, f"{task_name}_summary_stats.json"))
+        and os.path.exists(processed_done_path(out_dir, task_name))
+    )
+
+
+def skip_if_processed(out_dir: str, task_name: str) -> bool:
+    if processed_outputs_exist(out_dir, task_name):
+        print(f"⏭️  Skipping {task_name}; processed outputs already exist")
+        return True
+    return False
+
+
+def mark_processed_done(out_dir: str, task_name: str, meta: dict) -> None:
+    path = processed_done_path(out_dir, task_name)
+    tmp_path = path + ".tmp"
+
+    payload = {
+        "done": True,
+        "task": task_name,
+        **meta,
+    }
+
+    with open(tmp_path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+    os.replace(tmp_path, path)
+
 def save_json(obj: dict, path: str) -> None:
     with open(path, "w") as f:
         json.dump(obj, f, indent=2)
@@ -402,6 +437,15 @@ def write_processed_outputs(
     summary_json = os.path.join(out_dir, f"{task_name}_summary_stats.json")
     save_json(summary, summary_json)
     print(f"Saved summary stats → {summary_json}")
+    mark_processed_done(
+        out_dir,
+        task_name,
+        {
+            "original_n": int(orig_n),
+            "final_n": int(final_n),
+            "removed_counts": removed_counts,
+        },
+    )
 
 
 def parse_missing_codes(value) -> List[str]:
@@ -423,6 +467,10 @@ def parse_missing_codes(value) -> List[str]:
 
 def process_cpsc(raw_data_dir: str, processed_dir: str, seed: int) -> None:
     print("\n===== CPSC =====")
+
+    task_name = "cpsc2018"
+    if skip_if_processed(processed_dir, task_name):
+        return
 
     df_raw = read_csv_required(os.path.join(raw_data_dir, "cpsc2018_metadata.csv"))
     label_cols = require_label_cols(df_raw, prefix="label_")
@@ -460,6 +508,10 @@ def process_cpsc(raw_data_dir: str, processed_dir: str, seed: int) -> None:
 def process_echonext(raw_data_dir: str, processed_dir: str) -> None:
     print("\n===== ECHO_NEXT =====")
 
+    task_name = "echonext"
+    if skip_if_processed(processed_dir, task_name):
+        return
+
     df_raw = read_csv_required(os.path.join(raw_data_dir, "echonext_metadata.csv"))
     label_cols = require_label_cols(df_raw, suffix="_flag")
 
@@ -492,6 +544,10 @@ def process_echonext(raw_data_dir: str, processed_dir: str) -> None:
 
 def process_csn(raw_data_dir: str, processed_dir: str, seed: int) -> None:
     print("\n===== CSN =====")
+
+    task_name = "csn"
+    if skip_if_processed(processed_dir, task_name):
+        return
 
     df_raw = read_csv_required(os.path.join(raw_data_dir, "csn_metadata.csv"))
     label_cols = require_label_cols(df_raw, prefix="label_")
@@ -562,6 +618,9 @@ def process_csn(raw_data_dir: str, processed_dir: str, seed: int) -> None:
 def process_ptbxl_task(raw_data_dir: str, processed_dir: str, prefix: str, label_type: str) -> None:
     task_name = f"{prefix}_{label_type}"
     print(f"\n----- {task_name} -----")
+
+    if skip_if_processed(processed_dir, task_name):
+        return
 
     df_raw = read_csv_required(os.path.join(raw_data_dir, f"{task_name}_metadata.csv"))
     label_cols = require_label_cols(df_raw, prefix="label_")

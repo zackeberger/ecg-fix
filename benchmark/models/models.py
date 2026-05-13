@@ -30,21 +30,21 @@ def _resolve_weight_file(base_dir, preferred_name, legacy_names=()):
     return str(candidates[0])
 
 
-def get_weights_path(base_dir):
-    if args.model == "CLOCS":
+def get_weights_path(model_name, base_dir):
+    if model_name == "CLOCS":
         path = _resolve_weight_file(base_dir, "best_weights_clocs")
-    elif args.model == "MERL":
+    elif model_name == "MERL":
         path = _resolve_weight_file(base_dir, "res18_best_encoder.pth")
-    elif args.model == "KED":
+    elif model_name == "KED":
         path = _resolve_weight_file(base_dir, "ked.pt")
-    elif args.model == "HeartLang":
+    elif model_name == "HeartLang":
         path = _resolve_weight_file(base_dir, "heart.pth")
-    elif args.model == "D_BETA":
+    elif model_name == "D_BETA":
         config_path = _resolve_weight_file(base_dir, "dbeta_config.json")
         checkpoint_path = _resolve_weight_file(base_dir, "dbeta_best.pt")
         return config_path, checkpoint_path
     else:
-        raise ValueError(f"Unknown model type: {args.model}")
+        raise ValueError(f"Unknown model type: {model_name}")
 
     return path
 
@@ -52,7 +52,7 @@ def get_weights_path(base_dir):
 def create_embedding_model(model_name, weights_dir):
     if model_name == "MERL":
         model = MerlResNet18()
-        model.load_weights(get_weights_path(weights_dir))
+        model.load_weights(get_weights_path(model_name, weights_dir))
         return model
     
     elif model_name == "KED":
@@ -64,7 +64,11 @@ def create_embedding_model(model_name, weights_dir):
             lin_ftrs_head=[768],
             use_ecgNet_Diagnosis="other",
         )
-        checkpoint = torch.load(get_weights_path(weights_dir))["ecg_model"]
+        checkpoint = torch.load(
+            get_weights_path(model_name, weights_dir),
+            map_location="cpu",
+            weights_only=True,
+        )["ecg_model"]
         base_model.load_state_dict(checkpoint)
         base_model.eval()
         return nn.Sequential(ECGInterpolator(100), base_model)
@@ -81,7 +85,7 @@ def create_embedding_model(model_name, weights_dir):
             emb_dropout=0.01,
             Encoder=True,
         )
-        checkpoint = torch.load(get_weights_path(weights_dir))["model"]
+        checkpoint = torch.load(get_weights_path(model_name,weights_dir))["model"]
         base_model.load_state_dict(checkpoint, strict=False)
         base_model.eval()
 
@@ -109,9 +113,9 @@ def create_embedding_model(model_name, weights_dir):
                 k.replace("_orig_mod.", ""): v
                 for k, v in state_dict.items()
             }
-        path = get_weights_path(weights_dir)
+        path = get_weights_path(model_name, weights_dir)
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        state_dict = torch.load(path, map_location=device)
+        state_dict = torch.load(path, map_location=device, weights_only=True)
         state_dict = strip_compile_prefix(state_dict)
 
         missing, unexpected = model.load_state_dict(state_dict, strict=True)
@@ -119,13 +123,17 @@ def create_embedding_model(model_name, weights_dir):
         return model
 
     elif model_name == "D_BETA":
-        config_path, checkpoint_path = get_weights_path(weights_dir)
+        config_path, checkpoint_path = get_weights_path(model_name, weights_dir)
         with open(config_path, "r") as json_file:
             cfg = json.load(json_file)
 
         cfg = SimpleNamespace(**cfg["model"])
         model = DBETA(cfg)
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(
+            checkpoint_path,
+            map_location="cpu",
+            weights_only=True,
+        )
         if "ecg_encoder.mask_emb" in checkpoint["model"].keys():
             del checkpoint["model"]["ecg_encoder.mask_emb"]
 
@@ -133,7 +141,7 @@ def create_embedding_model(model_name, weights_dir):
 
         return model
 
-    elif "Random" in args.model:
-        return RandomEncoder(args)
+    elif "Random" in model_name:
+        return RandomEncoder(model_name)
 
-    raise ValueError(f"Unknown model type: {args.model}")
+    raise ValueError(f"Unknown model type: {model_name}")

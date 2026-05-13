@@ -12,11 +12,9 @@ from sklearn.multiclass import OneVsRestClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import Subset
-
-from benchmark.config import add_config_arg, apply_config_to_args
-from benchmark.local_logging import append_jsonl, make_run_dir, write_metrics_csv
 from benchmark.preprocess.load_embeddings import collect_embeddings, load_embeddings
-from benchmark.utils import log_dataset_stats, log_metrics_stats, save_metrics
+from benchmark.utils import log_dataset_stats, log_metrics_stats, save_metrics, save_stats
+import json
 
 mp.set_sharing_strategy("file_system")
 
@@ -90,9 +88,9 @@ def build_classifier(
             LogisticRegression(
                 C=C,
                 max_iter=10000,
-                n_jobs=10,
                 random_state=seed,
                 class_weight=class_weight,
+                solver='lbfgs',
             ),
             n_jobs=10,
         )
@@ -102,18 +100,74 @@ def build_classifier(
 
 
 
+def safe_name(x) -> str:
+    return str(x).replace("/", "_").replace(" ", "_").replace(".", "p")
+
+
+def eval_done_dir(args) -> str:
+    return os.path.join(args.results_dir, "done")
+
+def eval_done_path(args) -> str:
+    fname = (
+        f"{safe_name(args.data)}__"
+        f"{safe_name(args.model)}__"
+        f"trainpct_{safe_name(args.train_pct)}__"
+        f"seed_{safe_name(args.seed)}.done.json"
+    )
+    return os.path.join(eval_done_dir(args), fname)
+
+
+def eval_is_done(args) -> bool:
+    return os.path.exists(eval_done_path(args))
+
+def mark_eval_done(args, summary: dict) -> None:
+    done_dir = eval_done_dir(args)
+    os.makedirs(done_dir, exist_ok=True)
+
+    done_path = eval_done_path(args)
+    tmp_path = done_path + ".tmp"
+
+    payload = {
+        "done": True,
+        "data": args.data,
+        "model": args.model,
+        "train_pct": args.train_pct,
+        "seed": args.seed,
+        **summary,
+    }
+
+    with open(tmp_path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+    os.replace(tmp_path, done_path)
+
+def multilabel_bce_loss(y_true, y_prob, eps=1e-15):
+    y_true = (np.asarray(y_true) > 0).astype(np.float64)
+    y_prob = np.asarray(y_prob, dtype=np.float64)
+    y_prob = np.clip(y_prob, eps, 1.0 - eps)
+
+    return float(
+        -np.mean(
+            y_true * np.log(y_prob)
+            + (1.0 - y_true) * np.log(1.0 - y_prob)
+        )
+    )
+
 def eval_model(args):
     """Train the model with early stopping based on validation loss"""
-    run_dir = make_run_dir(args)
-    log_path = os.path.join(run_dir, "events.jsonl")
-    append_jsonl(log_path, {"event": "config", "config": vars(args)})
-    binary_task = "BINARY" in args.data
-
     #----train/val ----
-    g = torch.Generator()
-    g.manual_seed(467)
+    if eval_is_done(args):
+        print(
+            f"⏭️  Skipping done eval: "
+            f"{args.data} / {args.model} / train_pct={args.train_pct} / seed={args.seed}"
+        )
+        return
+
     dataset_train = load_embeddings(args, "train")
     num_train = int(len(dataset_train)* args.train_pct)
+
+    g = torch.Generator()
+    g.manual_seed(args.seed)
     indices_train = torch.randperm(len(dataset_train), generator=g)[:num_train]
     subset_train = Subset(dataset_train, indices_train)
 
@@ -143,10 +197,6 @@ def eval_model(args):
     X_val, y_val = collect_embeddings(valid_loader)
     X_train_fit, y_train_fit = prepare_train_data(X_train, y_train, args.model)
 
-    if binary_task:
-        y_train_fit = y_train_fit.reshape(-1)
-        y_val = y_val.reshape(-1)
-
 
     grid = {
     "scale": [True, False],
@@ -170,8 +220,8 @@ def eval_model(args):
 
                 clf.fit(X_train_fit, y_train_fit)
 
-                val_probs = predict_proba(clf, X_val, args.model, binary=binary_task)
-                val_loss = log_loss(y_val, val_probs)
+                val_probs = predict_proba(clf, X_val, args.model, binary=False)
+                val_loss = multilabel_bce_loss(y_val, val_probs)
 
 
                 if val_loss < best_loss:
@@ -188,7 +238,6 @@ def eval_model(args):
         "best_C": best_cfg["C"],
         "best_class_weight": str(best_cfg["class_weight"]),
     }
-    append_jsonl(log_path, {"event": "validation", **eval_summary})
 
     dataset_test = load_embeddings(args, "test")
 
@@ -204,32 +253,26 @@ def eval_model(args):
 
     X_test, y_true = collect_embeddings(test_loader)
 
-    if binary_task:
-        y_true = y_true.reshape(-1)
 
-    y_pred = predict_proba(best_clf, X_test, args.model, binary=binary_task)
+    y_pred = predict_proba(best_clf, X_test, args.model, binary=False)
 
-    test_loss = log_loss(y_true, y_pred)
-    append_jsonl(log_path, {"event": "test_loss", "test_loss": test_loss})
-
-    if binary_task:
-        y_true = y_true.reshape(-1, 1)
-        y_pred = y_pred.reshape(-1, 1)
+    test_loss = multilabel_bce_loss(y_true, y_pred)
+    eval_summary["test_loss"] = test_loss
 
     dataset_stats = log_dataset_stats(args, subset_train, dataset_valid, dataset_test)
     metric_stats = log_metrics_stats(args, y_true, y_pred, dataset_test.vocab)
+    metric_stats.update(eval_summary)
     save_metrics(args, y_true, y_pred,  dataset_test.vocab)
+    save_stats(args, dataset_stats, metric_stats)
 
-    append_jsonl(log_path, {"event": "dataset_stats", **dataset_stats})
-    append_jsonl(log_path, {"event": "metrics", **metric_stats})
-    write_metrics_csv(
-        os.path.join(run_dir, "metrics.csv"),
-        [{"metric": key, "value": value} for key, value in {**eval_summary, "test_loss": test_loss, **metric_stats}.items()],
+    mark_eval_done(args, metric_stats)
+    print(
+        f"Done: "
+        f"{args.data} / {args.model} / train_pct={args.train_pct} / seed={args.seed}"
     )
-    print(f"Saved local run logs to {run_dir}")
 
 
-RUNS = [  "PTBXL", "PTBXL_C","CSN","CPSC", "ECHO_NEXT"] #"PCWP_BINARY", "PAP_BINARY",
+RUNS = [  "PTBXL"] #, "ECHO_NEXT","CSN","CPSC"
 
 
 def run_one(cfg):
@@ -238,6 +281,7 @@ def run_one(cfg):
     args.model = cfg["model"]
     args.train_pct = cfg["train_pct"]
     args.seed = cfg["seed"]
+    args.results_dir = cfg["results_dir"]
     args.label_type =""
 
     eval_model(args)
@@ -246,15 +290,15 @@ def run_one(cfg):
 
 models = ["D_BETA", "MERL", "CLOCS", "KED", "HeartLang"]
 
-for hz in ["500Hz", "250Hz", "100Hz"]:
-    for z_score in ["Z_score_sample", "Z_score_dataset","Z_score_none"]:
-        for band in ["Add_Bandpass", "No_Bandpass"]:
-            for model in ["Vit", "Resnet18"]:
+for hz in ["500Hz"]: #, "250Hz", "100Hz"
+    for z_score in ["Z_score_sample", "Z_score_none"]: #"Z_score_dataset",
+        for band in ["No_Bandpass"]: #"Add_Bandpass", 
+            for model in [ "Resnet18"]: #"Vit",
                 name = f"Random_{hz}_{z_score}_{band}_{model}"
                 models.append(name)
 
 
-def main(multi= True):
+def main_eval(config):
     args = get_args_raw_ecg()
     configs = []
     if args.run_type == "specified":
@@ -262,9 +306,9 @@ def main(multi= True):
     elif args.run_type == "full":
         for data in RUNS:
             if "PTBXL" in data:
-                label_types = ['rhythm','super','form', 'sub']
+                label_types = ['form'] #'rhythm','super', 'sub'
             elif  data == "PTBXL_C":
-                label_types = ["rhythm", "form", "sub"]
+                label_types = [ "form"]#"rhythm", , "sub"
             else:
                 label_types = ['']
 
@@ -282,14 +326,15 @@ def main(multi= True):
                                 "model": model,
                                 "train_pct": train_pct,
                                 "seed": args.seed,
+                                "results_dir": config["results_dir"],
                             }
 
-                        if multi:
+                        if config["multi_process_eval"] > 1:
                             configs.append(cfg)
                         else:
                             run_one(cfg)
-        if multi:
-            max_workers = 8
+        if config["multi_process_eval"] > 1:
+            max_workers = config["multi_process_eval"]
             print(f"Launching {len(configs)} runs using {max_workers} workers")
 
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -304,7 +349,6 @@ def main(multi= True):
 
 def get_args_raw_ecg():
     parser = argparse.ArgumentParser(description="Train/evaluate models on ECG dataset")
-    add_config_arg(parser)
 
     # Run naming / logging
     parser.add_argument("--name", type=str, default=None, help="Optional run name for logging and model saving")
@@ -341,8 +385,6 @@ def get_args_raw_ecg():
     parser.add_argument("--seed", type=int, default=42, help="Global random seed")
 
     args = parser.parse_args()
-    apply_config_to_args(args)
-
 
     return args
 

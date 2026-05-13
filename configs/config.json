@@ -15,8 +15,9 @@
   "preprocess_workers": 32,
   "embedding": {
     "seed": 42,
-    "num_chunks": 6,
+    "chunk_size": 5,
     "batch_size": 256,
     "num_workers": 4
-  }
+  },
+  "multi_process_eval" : 8
 }

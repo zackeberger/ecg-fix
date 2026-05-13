@@ -1,6 +1,8 @@
 import json
 import multiprocessing as mp
-from benchmark.preprocess.process_all import main as main_preprocess
+from benchmark.process_data import main_preprocess
+from benchmark.eval import main_eval
+
 
 
 def main():
@@ -9,6 +11,7 @@ def main():
 
     print(config)
     main_preprocess(config)
+    main_eval(config)
 
 
 if __name__ == "__main__":

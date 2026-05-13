@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import Dataset
 from typing import Tuple, List, Dict, Callable, Optional
 from benchmark.preprocess.utils import *
-from benchmark.config import load_config
 
 
 class PTBXL_C_NPYDataset(Dataset):
@@ -34,8 +33,8 @@ class PTBXL_C_NPYDataset(Dataset):
         if split == "valid":
             split = "val"
         config = load_config()
-        root_dir = root_dir or config.raw_data_dir
-        meta_dir = meta_dir or config.processed_dir
+        root_dir = root_dir or config["raw_data_dir"]
+        meta_dir = meta_dir or config["processed_dir"]
         assert split in {"train", "val", "test"}
         assert label_type in {"form", "rhythm", "diagnostic_class", "diagnostic_subclass"}
 
@@ -51,8 +50,8 @@ class PTBXL_C_NPYDataset(Dataset):
         self.vocab = list(self.class_to_index.keys())
 
         # memmaps
-        self.ecg = np.load(os.path.join(root_dir, "ptbxl_c_ecg_500hz.npy"), mmap_mode="r")
-        self.labels = np.load(os.path.join(root_dir, f"ptbxl_c_{label_type}_labels.npy"), mmap_mode="r")
+        self.ecg = np.load(os.path.join(root_dir, "ptbxl_ecg_500hz.npy"), mmap_mode="r")
+        self.labels = np.load(os.path.join(root_dir, f"ptbxl_{label_type}_labels.npy"), mmap_mode="r")
 
         # metadata for this task
         meta = pd.read_csv(os.path.join(meta_dir, f"ptbxl_c_{label_type}_metadata_final.csv"))

@@ -273,7 +273,7 @@ def export_ptbxl_labels_and_metadata(dataset_root: str, out_dir: str, label_type
       - ptbxl_{label_type}_class_to_index.json
     Uses base metadata + valid_idx (hard mask).
     """
-    assert label_type in {"form", "rhythm", "diagnostic_class", "diagnostic_subclass"}
+    assert label_type in {"form", "rhythm","diagnostic_subclass"}
 
     # load base/meta
     base_meta = pd.read_csv(os.path.join(out_dir, "ptbxl_base_metadata.csv"))
@@ -364,7 +364,7 @@ def main(config):
     dataset_root = resolve_ptbxl_root(base_dir)
 
     # 1) export ECG once (500Hz)
-    ecg_done = os.path.join(out_dir, "ptbxl_ecg_500hz.done")
+    ecg_done = os.path.join(out_dir, "ptbxl_c_ecg_500hz.done")
     if os.path.exists(ecg_done):
         print(f"✅ Skipping ECG export, found {ecg_done}")
     else:
@@ -379,7 +379,7 @@ def main(config):
 
     # 2) export label npy + metadata csv for each label type
     for lt in ["form", "rhythm", "diagnostic_subclass"]:
-        label_done = os.path.join(out_dir, f"ptbxlc__{lt}.done")
+        label_done = os.path.join(out_dir, f"ptbxl_c_{lt}.done")
 
         if os.path.exists(label_done):
             print(f"✅ Skipping {lt}, found {label_done}")

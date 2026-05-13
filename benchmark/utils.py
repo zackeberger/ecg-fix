@@ -1,23 +1,13 @@
 import os
 import pickle
 import random
-
 import numpy as np
-import scipy.stats
 import torch
 from sklearn.metrics import (
     accuracy_score,
     average_precision_score,
-    mean_absolute_error,
-    mean_squared_error,
-    r2_score,
     roc_auc_score,
 )
-
-try:
-    import neurokit2 as nk
-except ImportError:
-    nk = None
 
 
 def set_seed(seed: int) -> None:
@@ -29,104 +19,6 @@ def set_seed(seed: int) -> None:
     torch.backends.cudnn.benchmark = False
 
 
-
-
-def get_embedings(model_name, model, x):
-    with torch.no_grad():
-        if model_name == "D_BETA":
-            return extract_ecg_DBeta_features(model, x)  # [B, embedding_dim]
-        else:
-            return model(x)
-
-
-def extract_hr_stats_neurokit2(X, sampling_rate):
-    """
-    Extract mean HR and HRV from batched 12-lead ECG using NeuroKit2.
-
-    Parameters
-    ----------
-    X : np.ndarray
-        Array of shape (B, 12, L) containing ECG signals.
-    sampling_rate : int or float
-        Sampling rate in Hz.
-
-    Returns
-    -------
-    stats : np.ndarray
-        Array of shape (B, 2) with mean HR and HRV per ECG.
-        Columns: [mean_hr, hrv]
-    """
-    if nk is None:
-        raise ImportError("neurokit2 is required for heart-rate feature extraction. Install requirements.txt first.")
-
-    B, C, L = X.shape
-    results = []
-
-    for b in range(B):
-        # Take one representative lead (e.g., lead II is index 1)
-        if C == 12:
-            ecg_signal = X[b, 1, :]  
-        elif C == 1:
-            ecg_signal = X[b, 0, :]  
-        
-
-        try:
-            # Process ECG
-            ecg_cleaned = nk.ecg_clean(ecg_signal, sampling_rate=sampling_rate)
-            _, rpeaks = nk.ecg_peaks(ecg_cleaned, sampling_rate=sampling_rate)
-
-             # --- Try full HRV first ---
-            try:
-                hrv_indices = nk.hrv(rpeaks, sampling_rate=sampling_rate, show=False)
-            except Exception:
-                # --- Fallback: time-domain HRV only ---
-                hrv_indices = nk.hrv_time(rpeaks, sampling_rate=sampling_rate, show=False)
-
-
-            hrv = (
-                hrv_indices["HRV_SDNN"].values[0]
-                if "HRV_SDNN" in hrv_indices
-                else np.nan
-            )
-
-            mean_hr = (
-                hrv_indices["HRV_MeanNN"].values[0]
-                if "HRV_MeanNN" in hrv_indices
-                else np.nan
-            )
-
-            results.append([mean_hr, hrv])
-
-        #    print([60000/mean_hr, hrv])
-        except Exception as e:
-      #      print(e)
-            # In case NeuroKit fails on a noisy signal
-            results.append([np.nan, np.nan])
-
-    return np.array(results)
-
-
-def extract_ecg_DBeta_features(model, ecgs):
-    #B, 12, 5000
-    num_ecgs = len(ecgs)
-    ecg_model = model.ecg_encoder
-    pooler = model.unimodal_ecg_pooler
-    proj = model.multi_modal_ecg_proj
-    class_embedding = model.class_embedding
-    
-
-    uni_modal_ecg_feats, ecg_padding_mask = (
-        ecg_model.get_embeddings(ecgs, padding_mask=None)
-    )
-    
-    cls_emb = class_embedding.repeat((len(uni_modal_ecg_feats), 1, 1))
-    uni_modal_ecg_feats = torch.cat([cls_emb, uni_modal_ecg_feats], dim=1)
-    uni_modal_ecg_feats = ecg_model.get_output(uni_modal_ecg_feats, ecg_padding_mask)
-    out = proj(uni_modal_ecg_feats)
-    ecg_features = pooler(out)
-    
-    return ecg_features
-    
 def save_metrics(args, y_true, y_pred, vocab):
     save_dict = {
         "y_true": y_true,
@@ -142,6 +34,23 @@ def save_metrics(args, y_true, y_pred, vocab):
         pickle.dump(save_dict, f)
 
     print(f"Saved metrics to {save_path}")
+
+
+def save_stats(args , dataset_stats, metric_stats):
+    path = os.path.join(args.results_dir, args.data, str(args.train_pct))
+    os.makedirs(path, exist_ok=True)
+
+    save_path_datset = os.path.join(path, f"{args.model}_dataset.pkl")
+    with open(save_path_datset, "wb") as f:
+        pickle.dump(dataset_stats, f)
+
+    print(f"Saved datset_stats to {save_path_datset}")
+
+    save_path_metric = os.path.join(path, f"{args.model}_metric.pkl")
+    with open(save_path_metric, "wb") as f:
+        pickle.dump(metric_stats, f)
+
+    print(f"Saved metric_stats to {save_path_metric}")
 
 def log_metrics_stats(args, y_true, y_pred, vocab):
     if "regression" in args.label_type:
@@ -330,196 +239,6 @@ def log_metrics_prob(y_true, y_pred, vocab, n_bootstrap=1000, seed=42):
 
     return logging
         
-
-def log_metrics_regression(
-    y_true,
-    y_pred,
-    vocab,
-    n_bootstrap=1000,
-    seed=42,
-):
-    """
-    Regression analogue of log_metrics_prob.
-
-    Args:
-        y_true: (N, C) ground-truth regression targets
-        y_pred: (N, C) predicted values
-        vocab:  dict {label_name: column_index}
-        n_bootstrap: number of bootstrap replicates
-        seed: RNG seed
-    """
-
-    num_targets = y_pred.shape[1]
-    assert num_targets == len(vocab), "Vocab size mismatch"
-
-    logging = {}
-
-    # --------------------------------------------------
-    # Point estimates (full data)
-    # --------------------------------------------------
-    per_target_rmse = []
-    per_target_mae = []
-    per_target_r2 = []
-    per_target_pearson = []
-    per_target_spearman = []
-
-    for label, i in vocab.items():
-        yt = y_true[:, i]
-        yp = y_pred[:, i]
-
-        mse = mean_squared_error(yt, yp)
-        rmse = float(np.sqrt(mse))
-        mae = float(mean_absolute_error(yt, yp))
-        r2 = float(r2_score(yt, yp))
-
-        # Correlations
-        pearson_r = float(np.corrcoef(yt, yp)[0, 1]) if np.std(yt) > 0 else np.nan
-        spearman_r = float(
-            scipy.stats.spearmanr(yt, yp, nan_policy="omit").correlation
-        )
-
-        logging[label + "_rmse"] = rmse
-        logging[label + "_mae"] = mae
-        logging[label + "_r2"] = r2
-        logging[label + "_pearson_r"] = pearson_r
-        logging[label + "_spearman_r"] = spearman_r
-
-        per_target_rmse.append(rmse)
-        per_target_mae.append(mae)
-        per_target_r2.append(r2)
-        per_target_pearson.append(pearson_r)
-        per_target_spearman.append(spearman_r)
-
-    # Macro (mean over targets)
-    macro_rmse = float(np.nanmean(per_target_rmse))
-    macro_mae = float(np.nanmean(per_target_mae))
-    macro_r2 = float(np.nanmean(per_target_r2))
-    macro_pearson = float(np.nanmean(per_target_pearson))
-    macro_spearman = float(np.nanmean(per_target_spearman))
-
-    print(f"Macro RMSE: {macro_rmse:.4f}")
-    print(f"Macro MAE: {macro_mae:.4f}")
-    print(f"Macro R2: {macro_r2:.4f}")
-    print(f"Macro Pearson r: {macro_pearson:.4f}")
-    print(f"Macro Spearman r: {macro_spearman:.4f}")
-
-    # --------------------------------------------------
-    # Bootstrap (paired over samples)
-    # --------------------------------------------------
-    N = y_true.shape[0]
-
-    rng_global = np.random.default_rng(seed)
-    bootstrap_seeds = rng_global.integers(0, 1_000_000, size=n_bootstrap)
-
-    boot_rmse = []
-    boot_mae = []
-    boot_r2 = []
-    boot_pearson = []
-    boot_spearman = []
-
-    per_target_boot = {
-        label: {
-            "rmse": [],
-            "mae": [],
-            "r2": [],
-            "pearson": [],
-            "spearman": [],
-        }
-        for label in vocab
-    }
-
-    for boot in bootstrap_seeds:
-        rng = np.random.default_rng(boot)
-        bs_idx = rng.choice(N, size=N, replace=True)
-
-        rmse_bs = []
-        mae_bs = []
-        r2_bs = []
-        pearson_bs = []
-        spearman_bs = []
-
-        for label, i in vocab.items():
-            yt = y_true[bs_idx, i]
-            yp = y_pred[bs_idx, i]
-
-            mse = mean_squared_error(yt, yp)
-            rmse = float(np.sqrt(mse))
-            mae = float(mean_absolute_error(yt, yp))
-            r2 = float(r2_score(yt, yp))
-
-            pearson_r = float(np.corrcoef(yt, yp)[0, 1]) if np.std(yt) > 0 else np.nan
-            spearman_r = float(
-                scipy.stats.spearmanr(yt, yp, nan_policy="omit").correlation
-            )
-
-            per_target_boot[label]["rmse"].append(rmse)
-            per_target_boot[label]["mae"].append(mae)
-            per_target_boot[label]["r2"].append(r2)
-            per_target_boot[label]["pearson"].append(pearson_r)
-            per_target_boot[label]["spearman"].append(spearman_r)
-
-            rmse_bs.append(rmse)
-            mae_bs.append(mae)
-            r2_bs.append(r2)
-            pearson_bs.append(pearson_r)
-            spearman_bs.append(spearman_r)
-
-        boot_rmse.append(np.nanmean(rmse_bs))
-        boot_mae.append(np.nanmean(mae_bs))
-        boot_r2.append(np.nanmean(r2_bs))
-        boot_pearson.append(np.nanmean(pearson_bs))
-        boot_spearman.append(np.nanmean(spearman_bs))
-
-    # --------------------------------------------------
-    # Aggregate bootstrap stats
-    # --------------------------------------------------
-    def ci(x):
-        return float(np.percentile(x, 2.5)), float(np.percentile(x, 97.5))
-
-    logging.update({
-        "macro_rmse": macro_rmse,
-        "macro_mae": macro_mae,
-        "macro_r2": macro_r2,
-        "macro_pearson_r": macro_pearson,
-        "macro_spearman_r": macro_spearman,
-
-        "macro_rmse_boot_mean": float(np.mean(boot_rmse)),
-        "macro_rmse_boot_std": float(np.std(boot_rmse)),
-        "macro_rmse_ci_low": ci(boot_rmse)[0],
-        "macro_rmse_ci_high": ci(boot_rmse)[1],
-
-        "macro_mae_boot_mean": float(np.mean(boot_mae)),
-        "macro_mae_boot_std": float(np.std(boot_mae)),
-        "macro_mae_ci_low": ci(boot_mae)[0],
-        "macro_mae_ci_high": ci(boot_mae)[1],
-
-        "macro_r2_boot_mean": float(np.mean(boot_r2)),
-        "macro_r2_boot_std": float(np.std(boot_r2)),
-        "macro_r2_ci_low": ci(boot_r2)[0],
-        "macro_r2_ci_high": ci(boot_r2)[1],
-
-        "macro_pearson_boot_mean": float(np.mean(boot_pearson)),
-        "macro_pearson_ci_low": ci(boot_pearson)[0],
-        "macro_pearson_ci_high": ci(boot_pearson)[1],
-
-        "macro_spearman_boot_mean": float(np.mean(boot_spearman)),
-        "macro_spearman_ci_low": ci(boot_spearman)[0],
-        "macro_spearman_ci_high": ci(boot_spearman)[1],
-
-        "num_targets": num_targets,
-        "num_bootstrap": n_bootstrap,
-    })
-
-    # Per-target bootstrap summaries
-    for label in vocab:
-        for metric in per_target_boot[label]:
-            scores = per_target_boot[label][metric]
-            logging[f"{label}_{metric}_boot_mean"] = float(np.nanmean(scores))
-            logging[f"{label}_{metric}_boot_std"] = float(np.nanstd(scores))
-            logging[f"{label}_{metric}_ci_low"] = float(np.nanpercentile(scores, 2.5))
-            logging[f"{label}_{metric}_ci_high"] = float(np.nanpercentile(scores, 97.5))
-
-    return logging
 
 def _collect_label_stats(dataset, vocab):
     """

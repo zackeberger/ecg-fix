@@ -27,6 +27,8 @@ Models and upstream code references:
 Install dependencies:
 
 ```bash
+conda create -n ecg-fix-env python=3.11 -y
+conda activate ecg-fix-env
 pip install -r requirements.txt
 ```
 
