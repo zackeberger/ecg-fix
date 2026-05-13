@@ -46,9 +46,6 @@ class CSNNPYDataset(Dataset):
         self.ecg = np.load(os.path.join(root_dir, "csn_ecg.npy"), mmap_mode="r")
         self.labels = np.load(os.path.join(root_dir, "csn_labels.npy"), mmap_mode="r")
 
-        # valid indices (hard mask)
-      #  valid_idx = np.load(os.path.join(root_dir, "csn_valid_idx.npy")).astype(np.int64)
-
         # metadata
         meta_df = pd.read_csv(meta_path)
         meta_df["split"] = meta_df["split"].replace({"valid": "val"})

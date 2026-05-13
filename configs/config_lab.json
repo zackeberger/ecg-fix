@@ -1,0 +1,22 @@
+{
+  "raw_data_dir": "./data/raw",
+  "processed_dir": "./data/processed",
+  "embeddings_dir": "./data/embeddings",
+  "results_dir": "./data/results",
+  "comparison_dir": "./data/comparisons",
+  "model_weights_dir": "./weights/model_weights",
+  "physionet_dir": "/storage/doprakah/shasta/physionet.org/files",
+  "dataset_roots": {
+    "PTBXL": "/storage/doprakah/shasta/physionet.org/files/ptb-xl/1.0.3",
+    "CPSC": "/storage/doprakah/shasta/physionet.org/files/challenge-2020/1.0.2/training/cpsc_2018",
+    "CSN": "/storage/doprakah/shasta/physionet.org/files/ecg-arrhythmia/1.0.0",
+    "ECHO_NEXT": "/storage/doprakah/shasta/physionet.org/files/echonext/1.1.0"
+  },
+  "preprocess_workers": 32,
+  "embedding": {
+    "seed": 42,
+    "num_chunks": 6,
+    "batch_size": 256,
+    "num_workers": 4
+  }
+}

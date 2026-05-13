@@ -158,48 +158,6 @@ def _process_one(i: int):
 
 
 
-
-def main(config):
-    base_dir =  config["dataset_roots"]["PTBXL"]
-    out_dir = config["raw_data_dir"]
-    os.makedirs(out_dir, exist_ok=True)
-
-    dataset_root = resolve_ptbxl_root(base_dir)
-
-    # 1) export ECG once (500Hz)
-    ecg_done = os.path.join(out_dir, "ptbxl_ecg_500hz.done")
-    if os.path.exists(ecg_done):
-        print(f"✅ Skipping ECG export, found {ecg_done}")
-    else:
-        export_ptbxl_ecg_500hz(
-            dataset_root,
-            out_dir,
-            n_workers=config["preprocess_workers"]
-        )
-        with open(ecg_done, "w") as f:
-            f.write("done\n")
-        print(f"Saved done marker -> {ecg_done}")
-
-
-    # 2) export label npy + metadata csv for each label type
-    for lt in ["form", "rhythm", "diagnostic_class", "diagnostic_subclass"]:
-        label_done = os.path.join(out_dir, f"ptbxl_{lt}.done")
-
-        if os.path.exists(label_done):
-            print(f"✅ Skipping {lt}, found {label_done}")
-            continue
-
-        export_ptbxl_labels_and_metadata(dataset_root, out_dir, lt)
-
-        with open(label_done, "w") as f:
-            f.write("done\n")
-
-        print(f"Saved done marker -> {label_done}")
-
-
-    print("\n✅ PTB-XL export done for all 4 label types.")
-
-
 def main(config):
 
     base_dir =  config["dataset_roots"]["CPSC"]

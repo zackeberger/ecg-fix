@@ -30,19 +30,18 @@ def _resolve_weight_file(base_dir, preferred_name, legacy_names=()):
     return str(candidates[0])
 
 
-def get_weights_path(args):
-    base_dir = args.model_weights_dir
+def get_weights_path(base_dir):
     if args.model == "CLOCS":
-        path = _resolve_weight_file(base_dir, "CLOCS.pt", legacy_names=("best_weights_clocs",))
+        path = _resolve_weight_file(base_dir, "best_weights_clocs")
     elif args.model == "MERL":
-        path = _resolve_weight_file(base_dir, "MERL.pt", legacy_names=("res18_best_encoder.pth",))
+        path = _resolve_weight_file(base_dir, "res18_best_encoder.pth")
     elif args.model == "KED":
-        path = _resolve_weight_file(base_dir, "KED.pt", legacy_names=("ked.pt",))
+        path = _resolve_weight_file(base_dir, "ked.pt")
     elif args.model == "HeartLang":
-        path = _resolve_weight_file(base_dir, "HeartLang.pt", legacy_names=("heart.pth",))
+        path = _resolve_weight_file(base_dir, "heart.pth")
     elif args.model == "D_BETA":
-        config_path = _resolve_weight_file(base_dir, "D_BETA_config.json", legacy_names=("dbeta_config.json",))
-        checkpoint_path = _resolve_weight_file(base_dir, "D_BETA.pt", legacy_names=("dbeta_best.pt",))
+        config_path = _resolve_weight_file(base_dir, "dbeta_config.json")
+        checkpoint_path = _resolve_weight_file(base_dir, "dbeta_best.pt")
         return config_path, checkpoint_path
     else:
         raise ValueError(f"Unknown model type: {args.model}")
@@ -50,13 +49,13 @@ def get_weights_path(args):
     return path
 
 
-def create_embedding_model(args):
-    if args.model == "MERL":
+def create_embedding_model(model_name, weights_dir):
+    if model_name == "MERL":
         model = MerlResNet18()
-        model.load_weights(get_weights_path(args))
+        model.load_weights(get_weights_path(weights_dir))
         return model
     
-    elif args.model == "KED":
+    elif model_name == "KED":
         base_model = xresnet1d101(
             num_classes=5,
             input_channels=12,
@@ -65,12 +64,12 @@ def create_embedding_model(args):
             lin_ftrs_head=[768],
             use_ecgNet_Diagnosis="other",
         )
-        checkpoint = torch.load(get_weights_path(args))["ecg_model"]
+        checkpoint = torch.load(get_weights_path(weights_dir))["ecg_model"]
         base_model.load_state_dict(checkpoint)
         base_model.eval()
         return nn.Sequential(ECGInterpolator(100), base_model)
 
-    elif args.model == "HeartLang":
+    elif model_name == "HeartLang":
         base_model = VqhbrBackbone(
             seq_len=256,
             time_window=96,
@@ -82,15 +81,15 @@ def create_embedding_model(args):
             emb_dropout=0.01,
             Encoder=True,
         )
-        checkpoint = torch.load(get_weights_path(args))["model"]
+        checkpoint = torch.load(get_weights_path(weights_dir))["model"]
         base_model.load_state_dict(checkpoint, strict=False)
         base_model.eval()
 
         tokenizer = QRSTokenizer(
-            fs=100,                  # 👈 IMPORTANT (your data is 500Hz)
-            max_len=256,             # fixed sequence length
-            token_len=96,            # window per heartbeat
-            save_path=None,          # you can ignore saving
+            fs=100,                  
+            max_len=256,            
+            token_len=96,            
+            save_path=None,         
             stage="test",
             used_channels=list(range(12)),
         )
@@ -102,7 +101,7 @@ def create_embedding_model(args):
             base_model,
         )
 
-    elif "CLOCS" == args.model:
+    elif model_name == "CLOCS":
         model = cnn_network_contrastive()
 
         def strip_compile_prefix(state_dict):
@@ -110,7 +109,7 @@ def create_embedding_model(args):
                 k.replace("_orig_mod.", ""): v
                 for k, v in state_dict.items()
             }
-        path = get_weights_path(args)
+        path = get_weights_path(weights_dir)
         device = "cuda" if torch.cuda.is_available() else "cpu"
         state_dict = torch.load(path, map_location=device)
         state_dict = strip_compile_prefix(state_dict)
@@ -119,8 +118,8 @@ def create_embedding_model(args):
         assert len(missing) == 0
         return model
 
-    elif args.model == "D_BETA":
-        config_path, checkpoint_path = get_weights_path(args)
+    elif model_name == "D_BETA":
+        config_path, checkpoint_path = get_weights_path(weights_dir)
         with open(config_path, "r") as json_file:
             cfg = json.load(json_file)
 

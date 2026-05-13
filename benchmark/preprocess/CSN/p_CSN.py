@@ -266,13 +266,12 @@ def main(config):
         for fut in tqdm(as_completed(futures), total=N_total, desc="CSN Processing + writing"):
             r = fut.result()
             if r is None:
-                meta["ecg_index"] = -100000
-            else:
+                continue
 
-                i, ecg_np, y_np, meta = r
-                ecg_mm[i] = ecg_np.astype(np.float16, copy=False)
-                label_mm[i] = y_np.astype(np.uint8, copy=False)
-                meta["ecg_index"] = i
+            i, ecg_np, y_np, meta = r
+            ecg_mm[i] = ecg_np.astype(np.float16, copy=False)
+            label_mm[i] = y_np.astype(np.uint8, copy=False)
+            meta["ecg_index"] = i
 
             meta_rows.append(meta)
 
