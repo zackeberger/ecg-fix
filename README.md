@@ -46,11 +46,16 @@ You can pass the config on each command with `--config configs/config.json`
 ## Download Data
 
 bash scripts/download_all_public_data.sh --skip-restricted
+accept  https://physionet.org/content/echonext/1.1.0/ before downloading
 bash scripts/download_echonext.sh --physionet-user YOUR_USERNAME
 
 ## Download Models
-huggingface-cli download doprakah/ecg-fix-weights \
-  --local-dir model_weights2
+pip install -U huggingface_hub
+hf auth login
+
+hf download doprakah/ecg-fix-weights \
+  --local-dir weights
+
 
 ## Data Workflow
 
