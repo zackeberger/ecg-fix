@@ -1,5 +1,8 @@
 physionet.org/*
 weights/*
+model_weights/*
 data/*
 *.pyc
 *.DS_Store
+results/*
+metrics/*
