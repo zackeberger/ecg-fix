@@ -1,6 +1,5 @@
-import os
-import pickle
 import random
+import hashlib
 import numpy as np
 import torch
 
@@ -22,3 +21,8 @@ def load_config():
         config = json.load(f)
 
     return config
+
+
+def stable_config_hash(config: dict) -> str:
+    payload = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

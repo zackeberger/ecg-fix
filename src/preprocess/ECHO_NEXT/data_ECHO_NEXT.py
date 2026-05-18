@@ -70,8 +70,8 @@ class EchoNextNPYDataset(Dataset):
         ecg = self.ecg[real_idx]       # (12, 5000)
         y = self.labels[real_idx]      # (C,)
 
-        ecg = torch.from_numpy(ecg).float()
-        y = torch.from_numpy(y).float()
+        ecg = torch.from_numpy(ecg.copy()).float()
+        y = torch.from_numpy(y.copy()).float()
 
         if self.transform:
             ecg = self.transform(ecg)

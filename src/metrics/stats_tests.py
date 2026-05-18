@@ -483,6 +483,7 @@ def _compare_one_pair(job: dict) -> dict:
     n_perm = job["n_perm"]
     alpha = job["alpha"]
     results_dir = job["results_dir"]
+    seed = job["seed"]
 
     path_a = output_path(results_dir, dataset, train_pct, model_a)
     path_b = output_path(results_dir, dataset, train_pct, model_b)
@@ -524,6 +525,7 @@ def _compare_one_pair(job: dict) -> dict:
 
         boot_seed = _seed_from_job(
             "bootstrap",
+            seed,
             dataset,
             train_pct,
             target,
@@ -534,6 +536,7 @@ def _compare_one_pair(job: dict) -> dict:
 
         perm_seed = _seed_from_job(
             "permutation",
+            seed,
             dataset,
             train_pct,
             target,
@@ -735,6 +738,7 @@ def _jobs_for_target(
     n_boot: int,
     n_perm: int,
     alpha: float,
+    seed: int,
 ) -> list[dict]:
     if best_model not in MODEL_ORDER:
         print(f"Skipping unknown best model {best_model} for {dataset} {target}")
@@ -759,6 +763,7 @@ def _jobs_for_target(
                 "n_boot": n_boot,
                 "n_perm": n_perm,
                 "alpha": alpha,
+                "seed": seed,
             }
         )
 
@@ -787,6 +792,7 @@ def export_stats_tests_for_run(
         else config.get("stats_tests", {}).get("n_perm", DEFAULT_N_PERM)
     )
     max_workers = int(config.get("multi_process_eval", 1))
+    seed = int(config.get("seed", 42))
 
     targets = _targets_for_run(
         results_dir=results_dir,
@@ -811,6 +817,7 @@ def export_stats_tests_for_run(
                 n_boot=n_boot,
                 n_perm=n_perm,
                 alpha=alpha,
+                seed=seed,
             )
 
             if not jobs:

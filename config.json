@@ -6,6 +6,7 @@
   "tables_dir": "./metrics",
   "model_weights_dir": "./model_weights",
   "physionet_dir": "./physionet.org/files",
+  "seed": 42,
   "dataset_roots": {
     "PTBXL": "./physionet.org/files/ptb-xl/1.0.3",
     "CPSC": "./physionet.org/files/challenge-2020/1.0.2/training/cpsc_2018",
@@ -14,7 +15,6 @@
   },
   "preprocess_workers": 32,
   "embedding": {
-    "seed": 42,
     "chunk_size": 5,
     "batch_size": 256,
     "num_workers": 4,

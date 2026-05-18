@@ -20,6 +20,7 @@ from src.registry import (
     normalize_datasets,
      normalize_models
 )
+from src.utils import stable_config_hash
 import warnings
 from tqdm import tqdm
 from sklearn.exceptions import UndefinedMetricWarning
@@ -170,6 +171,8 @@ def eval_is_done(args) -> bool:
         "model": args.model,
         "train_pct": args.train_pct,
         "seed": args.seed,
+        "config_hash": args.config_hash,
+        "n_boot": args.n_boot,
     }
     for key, value in expected.items():
         if payload.get(key) != value:
@@ -195,6 +198,8 @@ def mark_eval_done(args, summary: dict) -> None:
         "model": args.model,
         "train_pct": args.train_pct,
         "seed": args.seed,
+        "config_hash": args.config_hash,
+        "n_boot": args.n_boot,
         **summary,
     }
 
@@ -238,7 +243,7 @@ def eval_model(args):
         "batch_size": args.batch_size,
         "shuffle": False,
         "num_workers": args.num_workers,
-        "pin_memory": True,
+        "pin_memory": False,
         "persistent_workers": False,
     }
 
@@ -358,6 +363,7 @@ def make_eval_args(cfg: dict):
         n_boot= cfg["n_boot"],
 
         seed=cfg["seed"],
+        config_hash=cfg["config_hash"],
     )
 
 
@@ -408,6 +414,7 @@ def main_eval(args, config):
     n_boot=int(config.get("stats_tests", {}).get("n_boot", 1000))
 
     seed = int(config.get("seed", 42))
+    config_hash = stable_config_hash(config)
     max_workers = int(config.get("multi_process_eval", 1))
 
     print(f"Selected eval datasets: {selected_datasets}")
@@ -425,6 +432,7 @@ def main_eval(args, config):
                     "model": model_name,
                     "train_pct": float(train_pct),
                     "seed": seed,
+                    "config_hash": config_hash,
                     "results_dir": config["results_dir"],
                     "embeddings_dir": config["embeddings_dir"],
                     "batch_size": eval_batch_size,

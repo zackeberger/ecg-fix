@@ -82,8 +82,8 @@ class CPSCNPYDataset(Dataset):
         ecg = self.ecg[real_idx]       # (12, 5000)
         label = self.labels[real_idx]  # (C,)
 
-        ecg = torch.from_numpy(ecg).float()
-        label = torch.from_numpy(label).float()
+        ecg = torch.from_numpy(ecg.copy()).float()
+        label = torch.from_numpy(label.copy()).float()
 
         if self.transform:
             ecg = self.transform(ecg)
