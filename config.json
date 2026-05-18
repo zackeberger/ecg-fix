@@ -17,8 +17,8 @@
   "embedding": {
     "chunk_size": 5,
     "batch_size": 256,
-    "num_workers": 4,
-    "prefetch_factor":4
+    "num_workers": 0,
+    "prefetch_factor":0
   },
   "multi_process_eval": 4,
   "eval": {
