@@ -110,7 +110,6 @@ def main():
     # Physical datasets needed for download.
     download_datasets = get_download_datasets(selected_datasets)
 
-    # Store normalized exact datasets back into args.
     args.datasets = selected_datasets
 
     print("Using config")

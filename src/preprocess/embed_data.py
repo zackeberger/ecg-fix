@@ -332,11 +332,11 @@ def save_embeddings_for_split(
     generator = torch.Generator()
     generator.manual_seed(seed)
 
-    from torch.utils.data import Subset
-    max_examples = 1000
+    # from torch.utils.data import Subset
+    # max_examples = 1000
 
-    n = min(max_examples, len(ds))
-    ds = Subset(ds, range(n))
+    # n = min(max_examples, len(ds))
+    # ds = Subset(ds, range(n))
 
     loader = DataLoader(
         ds,

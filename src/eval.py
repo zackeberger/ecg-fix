@@ -1,3 +1,4 @@
+import gc
 import os
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -115,6 +116,7 @@ def build_classifier(
     C: float,
     class_weight,
     seed: int,
+    sklearn_n_jobs: int,
 ):
     steps = []
 
@@ -131,7 +133,7 @@ def build_classifier(
                 class_weight=class_weight,
                 solver='lbfgs',
             ),
-            n_jobs=10,
+            n_jobs=sklearn_n_jobs,
         )
     ))
 
@@ -247,9 +249,6 @@ def eval_model(args):
         "persistent_workers": False,
     }
 
-    if args.num_workers > 0:
-        loader_kwargs["prefetch_factor"] = args.prefetch_factor
-
     subset_train_loader = torch.utils.data.DataLoader(
             subset_train,
             **loader_kwargs,
@@ -285,6 +284,7 @@ def eval_model(args):
                     C=C,
                     class_weight=cw,
                     seed=args.seed,
+                    sklearn_n_jobs=args.sklearn_n_jobs,
                 )
 
                 clf.fit(X_train_fit, y_train_fit)
@@ -337,6 +337,28 @@ def eval_model(args):
     save_stats(args, dataset_stats, metric_stats)
 
     mark_eval_done(args, metric_stats)
+
+    del (
+        X_train,
+        X_val,
+        X_train_fit,
+        y_train,
+        y_val,
+        y_train_fit,
+        X_test,
+        y_true,
+        y_pred,
+        subset_train_loader,
+        valid_loader,
+        test_loader,
+        dataset_train,
+        subset_train,
+        dataset_valid,
+        dataset_test,
+        best_clf,
+    )
+    gc.collect()
+
     print(
         f"Done: "
         f"{args.data} / {args.model} / train_pct={args.train_pct} / seed={args.seed}"
@@ -358,9 +380,9 @@ def make_eval_args(cfg: dict):
         embeddings_dir=cfg["embeddings_dir"],
 
         num_workers=cfg["num_workers"],
-        prefetch_factor=cfg["prefetch_factor"],
         batch_size=cfg["batch_size"],
         n_boot= cfg["n_boot"],
+        sklearn_n_jobs=cfg["sklearn_n_jobs"],
 
         seed=cfg["seed"],
         config_hash=cfg["config_hash"],
@@ -408,9 +430,10 @@ def main_eval(args, config):
 
     train_pcts = [0.01, 0.1, 1.0]
 
-    eval_batch_size = int(config.get("embedding", {}).get("batch_size", 256))
-    eval_num_workers = int(config.get("embedding", {}).get("num_workers", 4))
-    eval_prefetch_factor = int(config.get("embedding", {}).get("prefetch_factor", 4))
+    eval_cfg = config.get("eval", {})
+    eval_batch_size = int(eval_cfg.get("batch_size", 256))
+    eval_num_workers = int(eval_cfg.get("num_workers", 0))
+    sklearn_n_jobs = int(eval_cfg.get("sklearn_n_jobs", 1))
     n_boot=int(config.get("stats_tests", {}).get("n_boot", 1000))
 
     seed = int(config.get("seed", 42))
@@ -437,7 +460,7 @@ def main_eval(args, config):
                     "embeddings_dir": config["embeddings_dir"],
                     "batch_size": eval_batch_size,
                     "num_workers": eval_num_workers,
-                    "prefetch_factor": eval_prefetch_factor,
+                    "sklearn_n_jobs": sklearn_n_jobs,
                 }
 
                 if max_workers > 1:

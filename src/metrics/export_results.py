@@ -734,7 +734,8 @@ def main_export(config: dict) -> None:
     export_all_task_tables(config)
     export_subset_task_tables(config)
     export_clean_comparison_tables(config)
-    export_stats_tests(config)
     export_random_table(config)
+    export_stats_tests(config)
+    
 
     print("✅ CSV export complete.")

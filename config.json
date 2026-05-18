@@ -20,8 +20,13 @@
     "num_workers": 4,
     "prefetch_factor":4
   },
-  "multi_process_eval" : 8,
-   "stats_tests": {
+  "multi_process_eval": 4,
+  "eval": {
+    "batch_size": 256,
+    "num_workers": 0,
+    "sklearn_n_jobs": 1
+  },
+  "stats_tests": {
     "alpha": 0.05,
     "n_boot": 1000,
     "n_perm": 1000

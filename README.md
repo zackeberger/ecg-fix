@@ -45,8 +45,15 @@ before running experiments:
 - `results_dir`: prediction pickles, metric pickles, and done markers.
 - `tables_dir`: CSV tables and statistical comparison exports.
 - `model_weights_dir`: pretrained checkpoint directory.
+- `seed`: shared experiment seed used by preprocessing splits, embedding, eval,
+  metric bootstraps, and statistical tests.
 - `embedding.chunk_size`: how many models to embed in one loaded model group.
 - `multi_process_eval`: number of parallel linear-probe evaluation workers.
+- `eval.num_workers`: DataLoader workers for loading saved embeddings during
+  linear-probe evaluation. The default is `0` because eval reads precomputed
+  `.npy` embeddings.
+- `eval.sklearn_n_jobs`: per-eval sklearn parallelism. Keep this low when
+  `multi_process_eval` is greater than `1` to avoid nested oversubscription.
 
 ## Download Data
 
@@ -71,6 +78,12 @@ You can also download datasets with the bash scripts in `scripts/` if you want
 to prepare data before running the Python pipeline:
 
 ```bash
+# All supported datasets. Use --skip-restricted to skip EchoNext.
+bash scripts/download_all_datasets.sh --skip-restricted
+
+# All supported datasets including EchoNext, after accepting the PhysioNet DUA.
+bash scripts/download_all_datasets.sh --physionet-user YOUR_USERNAME
+
 # PTB-XL
 bash scripts/download_ptb_xl.sh
 
@@ -199,7 +212,12 @@ Embedding files are written under:
 ```text
 data/embeddings/<dataset>/<split>/<model>.npy
 data/embeddings/<dataset>/<split>/<model>_y.npy
+data/embeddings/<dataset>/<split>/<model>_done.json
 ```
+
+Embedding done markers store the dataset, split, model, seed, config hash,
+model-weight metadata, and embedding dtype. If those values no longer match the
+current run, the embedding is treated as stale and regenerated.
 
 Evaluation files are written under:
 
@@ -209,6 +227,10 @@ results/<dataset>/<train_pct>/<model>/<model>_dataset.pkl
 results/<dataset>/<train_pct>/<model>/<model>_metric.pkl
 results/done/
 ```
+
+Evaluation done markers store the dataset, model, train percentage, seed,
+config hash, and bootstrap count. If the config or seed changes, old eval done
+markers are rejected and the evaluation runs again.
 
 CSV exports are written under `tables_dir`, which is `./metrics` in the default
 `config.json`:
@@ -255,13 +277,19 @@ folder, for example:
 rm -r results/PTBXL_super/1.0/D_BETA
 ```
 
-The done marker in `results/done/` is validated against the expected output
-files, so a missing model folder will cause that evaluation to run again. To
-regenerate exported CSVs, delete the corresponding folder under `metrics/`, for
-example `metrics/tables/ptbxl_clean_comparison/` or
+The done marker in `results/done/` is validated against both expected output
+files and run metadata, so a missing model folder or stale config hash will
+cause that evaluation to run again. To rerun embeddings, delete the
+corresponding folder under `data/embeddings/<dataset>/<split>/` or the specific
+model `.npy`, `_y.npy`, and `_done.json` files. To regenerate exported CSVs,
+delete the corresponding folder under `metrics/`, for example
+`metrics/tables/ptbxl_clean_comparison/` or
 `metrics/stats_tests/PTBXL_super/trainpct_1p0/`, then rerun the pipeline.
 
 ## Notes
 
 - The pipeline is resumable at the embedding and evaluation levels. Existing
-  model outputs with done markers are skipped.
+  model outputs with matching done markers are skipped.
+- Embedding uses GPU automatically when CUDA is available. After each embedding
+  model chunk, models are moved back to CPU and CUDA cache is cleared before the
+  next chunk.
