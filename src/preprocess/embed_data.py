@@ -1,3 +1,4 @@
+import gc
 import os
 import json
 import random
@@ -22,7 +23,7 @@ from src.registry import (
     normalize_models,
     normalize_datasets,
 )
-from src.utils import set_seed, stable_config_hash
+from src.utils import embedding_config_hash, set_seed
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -391,8 +392,12 @@ def save_embeddings_for_split(
 
     for mm in emb_mms.values():
         mm.flush()
+        if hasattr(mm, "_mmap") and mm._mmap is not None:
+            mm._mmap.close()
     for mm in y_mms.values():
         mm.flush()
+        if hasattr(mm, "_mmap") and mm._mmap is not None:
+            mm._mmap.close()
 
     meta = {
         "dataset": dataset_name,
@@ -416,6 +421,9 @@ def save_embeddings_for_split(
         model_meta = dict(meta)
         model_meta.update(expected_meta_by_model[model_name])
         save_model_done(split_dir, model_name, model_meta)
+
+    del loader, ds, emb_mms, y_mms, pending_models
+    gc.collect()
 
     print(f"✅ Saved embeddings to: {split_dir}")
 
@@ -485,7 +493,7 @@ def embed_dataset(
 
 def embed_main(args, config) -> None:
     embedding_cfg = get_embedding_config(config)
-    embedding_cfg["config_hash"] = stable_config_hash(config)
+    embedding_cfg["config_hash"] = embedding_config_hash(config)
 
     os.makedirs(config["embeddings_dir"], exist_ok=True)
 

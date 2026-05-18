@@ -21,7 +21,7 @@ from src.registry import (
     normalize_datasets,
      normalize_models
 )
-from src.utils import stable_config_hash
+from src.utils import eval_config_hash
 import warnings
 from tqdm import tqdm
 from sklearn.exceptions import UndefinedMetricWarning
@@ -437,7 +437,7 @@ def main_eval(args, config):
     n_boot=int(config.get("stats_tests", {}).get("n_boot", 1000))
 
     seed = int(config.get("seed", 42))
-    config_hash = stable_config_hash(config)
+    config_hash = eval_config_hash(config)
     max_workers = int(config.get("multi_process_eval", 1))
 
     print(f"Selected eval datasets: {selected_datasets}")
