@@ -1,8 +1,8 @@
 {
   "raw_data_dir": "./data/raw",
   "processed_dir": "./data/processed",
-  "embeddings_dir": "/storage4/data/ecg_fix_temp/embeddings",
-  "results_dir": "/storage4/data/ecg_fix_temp/results",
+  "embeddings_dir": "./data/embeddings",
+  "results_dir": "./data/results",
   "tables_dir": "./metrics",
   "model_weights_dir": "./model_weights",
   "physionet_dir": "./physionet.org/files",
@@ -13,7 +13,7 @@
     "CSN": "./physionet.org/files/ecg-arrhythmia/1.0.0",
     "ECHO_NEXT": "./physionet.org/files/echonext/1.1.0"
   },
-  "preprocess_workers": 32,
+  "preprocess_workers": 30,
   "embedding": {
     "chunk_size": 5,
     "batch_size": 256,
@@ -27,7 +27,7 @@
     "sklearn_n_jobs": 1
   },
   "stats_tests": {
-    "alpha": 0.05,
+    "alpha": 0.01,
     "n_boot": 1000,
     "n_perm": 1000
   }
