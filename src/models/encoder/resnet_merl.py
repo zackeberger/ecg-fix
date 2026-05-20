@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from models.encoder.ecg_embedder import ECGEmbedder
+from src.models.encoder.ecg_embedder import ECGEmbedder
 
 class BasicBlock(nn.Module):
     expansion = 1

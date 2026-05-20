@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 import json
 import sys
 sys.path.append(".")
-from D_BETA.models.dbeta import DBETA
+from external_src.D_BETA.models.dbeta import DBETA
 from types import SimpleNamespace
 
 

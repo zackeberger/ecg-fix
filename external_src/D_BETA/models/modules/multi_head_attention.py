@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from D_BETA.models.modules.quant_noise import quant_noise
-from D_BETA.models.modules.dropout import Dropout
+from external_src.D_BETA.models.modules.quant_noise import quant_noise
+from external_src.D_BETA.models.modules.dropout import Dropout
 
 class MultiHeadAttention(nn.Module):
     def __init__(

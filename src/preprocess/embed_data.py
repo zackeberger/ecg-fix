@@ -10,12 +10,14 @@ from numpy.lib.format import open_memmap
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models.models import *
-from src.preprocess.CPSC.data_CPSC import CPSCNPYDataset
-from src.preprocess.CSN.data_CSN import CSNNPYDataset
-from src.preprocess.ECHO_NEXT.data_ECHO_NEXT import EchoNextNPYDataset
-from src.preprocess.PTBXL.data_PTBXL import PTBXLNPYDataset
-from src.preprocess.PTBXL_C.data_PTBXL_C import PTBXL_C_NPYDataset
+from src.models.models import create_embedding_model
+from src.preprocess.datasets import make_dataset
+from src.preprocess.embedding_state import (
+    expected_meta_by_model,
+    models_needed_for_embedding,
+    pending_models_for_split,
+    save_model_done,
+)
 
 from src.registry import (
     EXACT_DATASET_CHOICES,
@@ -23,7 +25,7 @@ from src.registry import (
     normalize_models,
     normalize_datasets,
 )
-from src.utils import embedding_config_hash, set_seed
+from src.utils import set_seed
 import warnings
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -151,131 +153,9 @@ def get_embeddings(model_name: str, model, x: torch.Tensor):
         return model(x)
 
 
-def make_dataset(dataset_name: str, split: str):
-    if dataset_name == "CSN":
-        return CSNNPYDataset(split=split)
-    if dataset_name == "ECHO_NEXT":
-        return EchoNextNPYDataset(split=split)
-    if dataset_name == "CPSC":
-        return CPSCNPYDataset(split=split)
-    if dataset_name == "PTBXL_form":
-        return PTBXLNPYDataset("form", split=split)
-    if dataset_name == "PTBXL_super":
-        return PTBXLNPYDataset("diagnostic_class", split=split)
-    if dataset_name == "PTBXL_sub":
-        return PTBXLNPYDataset("diagnostic_subclass", split=split)
-    if dataset_name == "PTBXL_rhythm":
-        return PTBXLNPYDataset("rhythm", split=split)
-    if dataset_name == "PTBXL_C_form":
-        return PTBXL_C_NPYDataset("form", split=split)
-    if dataset_name == "PTBXL_C_sub":
-        return PTBXL_C_NPYDataset("diagnostic_subclass", split=split)
-    if dataset_name == "PTBXL_C_rhythm":
-        return PTBXL_C_NPYDataset("rhythm", split=split)
-
-    raise ValueError(f"Unknown dataset: {dataset_name}")
-
-
-def model_done_path(split_dir: str, model_name: str) -> str:
-    return os.path.join(split_dir, f"{model_name}_done.json")
-
-
-def model_weight_metadata(model_name: str, weights_dir: str):
-    if "Random" in model_name:
-        return None
-
-    weights = get_weights_path(model_name, weights_dir)
-    if isinstance(weights, tuple):
-        return list(weights)
-
-    return weights
-
-
-def expected_model_done_meta(
-    *,
-    dataset_name: str,
-    split: str,
-    model_name: str,
-    seed: int,
-    config_hash: str,
-    weights_dir: str,
-    emb_dtype,
-) -> dict:
-    return {
-        "dataset": dataset_name,
-        "split": split,
-        "model": model_name,
-        "seed": seed,
-        "config_hash": config_hash,
-        "model_weights": model_weight_metadata(model_name, weights_dir),
-        "emb_dtype": str(np.dtype(emb_dtype)),
-    }
-
-
-def model_outputs_exist(
-    split_dir: str,
-    model_name: str,
-    expected_meta: dict | None = None,
-) -> bool:
-    output_files_exist = (
-        os.path.exists(os.path.join(split_dir, f"{model_name}.npy"))
-        and os.path.exists(os.path.join(split_dir, f"{model_name}_y.npy"))
-        and os.path.exists(model_done_path(split_dir, model_name))
-    )
-
-    if not output_files_exist:
-        return False
-
-    if expected_meta is None:
-        return True
-
-    try:
-        with open(model_done_path(split_dir, model_name), "r") as f:
-            payload = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return False
-
-    if payload.get("done") is not True:
-        return False
-
-    for key, value in expected_meta.items():
-        if payload.get(key) != value:
-            return False
-
-    return True
-
-
-def pending_models_for_split(
-    out_root: str,
-    dataset_name: str,
-    split: str,
-    models: dict,
-    expected_meta_by_model: dict[str, dict] | None = None,
-) -> list[str]:
-    split_dir = os.path.join(out_root, dataset_name, split)
-    return [
-        mname
-        for mname in models
-        if not model_outputs_exist(
-            split_dir,
-            mname,
-            None if expected_meta_by_model is None else expected_meta_by_model[mname],
-        )
-    ]
-
-
 def save_split_meta(split_dir: str, meta: dict) -> None:
     with open(os.path.join(split_dir, "meta.json"), "w") as f:
         json.dump(meta, f, indent=2)
-
-
-def save_model_done(split_dir: str, model_name: str, meta: dict) -> None:
-    done_payload = dict(meta)
-    done_payload["model"] = model_name
-    done_payload["done"] = True
-
-    with open(model_done_path(split_dir, model_name), "w") as f:
-        json.dump(done_payload, f, indent=2)
 
 
 def save_embeddings_for_split(
@@ -290,32 +170,27 @@ def save_embeddings_for_split(
     device: str,
     embedding_shapes: dict,
     seed: int,
-    config_hash: str,
     weights_dir: str,
     emb_dtype=np.float32,
 ) -> None:
     split_dir = os.path.join(out_root, dataset_name, split)
     os.makedirs(split_dir, exist_ok=True)
 
-    expected_meta_by_model = {
-        model_name: expected_model_done_meta(
-            dataset_name=dataset_name,
-            split=split,
-            model_name=model_name,
-            seed=seed,
-            config_hash=config_hash,
-            weights_dir=weights_dir,
-            emb_dtype=emb_dtype,
-        )
-        for model_name in models
-    }
+    expected_meta = expected_meta_by_model(
+        dataset_name=dataset_name,
+        split=split,
+        model_names=models,
+        seed=seed,
+        weights_dir=weights_dir,
+        emb_dtype=emb_dtype,
+    )
 
     pending_names = pending_models_for_split(
         out_root,
         dataset_name,
         split,
         models,
-        expected_meta_by_model,
+        expected_meta,
     )
     if not pending_names:
         print(f"⏭️  Skipping {dataset_name}/{split}; all selected models are done")
@@ -404,7 +279,6 @@ def save_embeddings_for_split(
         "split": split,
         "N": n,
         "seed": seed,
-        "config_hash": config_hash,
         "shuffle": False,
         "emb_dtype": str(np.dtype(emb_dtype)),
         "y_shape": list(y_shape),
@@ -419,7 +293,7 @@ def save_embeddings_for_split(
 
     for model_name in pending_names:
         model_meta = dict(meta)
-        model_meta.update(expected_meta_by_model[model_name])
+        model_meta.update(expected_meta[model_name])
         save_model_done(split_dir, model_name, model_meta)
 
     del loader, ds, emb_mms, y_mms, pending_models
@@ -442,29 +316,24 @@ def embed_dataset(
     batch_size = int(embedding_cfg["batch_size"])
     num_workers = int(embedding_cfg["num_workers"])
     seed = int(embedding_cfg["seed"])
-    config_hash = embedding_cfg["config_hash"]
     weights_dir = config["model_weights_dir"]
     emb_dtype = np.dtype(embedding_cfg["emb_dtype"])
 
     for split in splits:
-        expected_meta_by_model = {
-            model_name: expected_model_done_meta(
-                dataset_name=dataset_name,
-                split=split,
-                model_name=model_name,
-                seed=seed,
-                config_hash=config_hash,
-                weights_dir=weights_dir,
-                emb_dtype=emb_dtype,
-            )
-            for model_name in models
-        }
+        expected_meta = expected_meta_by_model(
+            dataset_name=dataset_name,
+            split=split,
+            model_names=models,
+            seed=seed,
+            weights_dir=weights_dir,
+            emb_dtype=emb_dtype,
+        )
         pending = pending_models_for_split(
             out_root,
             dataset_name,
             split,
             models,
-            expected_meta_by_model,
+            expected_meta,
         )
 
         if not pending:
@@ -485,7 +354,6 @@ def embed_dataset(
             device=device,
             embedding_shapes=embedding_shapes,
             seed=seed,
-            config_hash=config_hash,
             weights_dir=weights_dir,
             emb_dtype=emb_dtype,
         )
@@ -493,7 +361,6 @@ def embed_dataset(
 
 def embed_main(args, config) -> None:
     embedding_cfg = get_embedding_config(config)
-    embedding_cfg["config_hash"] = embedding_config_hash(config)
 
     os.makedirs(config["embeddings_dir"], exist_ok=True)
 
@@ -516,6 +383,8 @@ def embed_main(args, config) -> None:
 
     embedding_shapes = build_embedding_shapes()
     model_chunks = build_model_chunks(embedding_cfg, selected_models)
+    splits = list(embedding_cfg["splits"])
+    emb_dtype = np.dtype(embedding_cfg["emb_dtype"])
 
     print(f"Num selected models: {len(selected_models)}")
     print(f"Num model chunks: {len(model_chunks)}")
@@ -526,14 +395,37 @@ def embed_main(args, config) -> None:
         print(f"Models: {selected_model_names}")
         print("=" * 80)
 
+        needed_model_names = models_needed_for_embedding(
+            out_root=config["embeddings_dir"],
+            dataset_names=selected_datasets,
+            splits=splits,
+            model_names=selected_model_names,
+            seed=seed,
+            weights_dir=config["model_weights_dir"],
+            emb_dtype=emb_dtype,
+        )
+
+        if not needed_model_names:
+            print("Skipping model chunk; all selected embeddings already exist")
+            continue
+
+        skipped_model_names = [
+            model_name
+            for model_name in selected_model_names
+            if model_name not in needed_model_names
+        ]
+        if skipped_model_names:
+            print(f"Already complete; not loading models: {skipped_model_names}")
+        print(f"Loading needed models: {needed_model_names}")
+
         set_seed(seed)
-        models = create_models(config, embedding_cfg, selected_model_names, device)
+        models = create_models(config, embedding_cfg, needed_model_names, device)
 
         for dataset_name in selected_datasets:
 
             embed_dataset(
                 dataset_name=dataset_name,
-                splits=embedding_cfg["splits"],
+                splits=splits,
                 models=models,
                 config=config,
                 embedding_cfg=embedding_cfg,

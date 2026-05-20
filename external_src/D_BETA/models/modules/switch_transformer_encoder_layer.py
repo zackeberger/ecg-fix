@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from D_BETA.models.modules import MultiHeadAttention, LayerNorm
+from external_src.D_BETA.models.modules import MultiHeadAttention, LayerNorm
 
 
 class SwitchGate(nn.Module):

@@ -2,7 +2,6 @@ import argparse
 import json
 import multiprocessing as mp
 
-from src.preprocess.download_dataset import main_download
 from src.preprocess.process_data import main_preprocess
 from src.metrics.export_results import main_export
 from src.eval import main_eval
@@ -11,7 +10,6 @@ from src.registry import (
     COARSE_DATASET_CHOICES,
     EXACT_DATASET_CHOICES,
     normalize_datasets,
-    get_download_datasets,
 )
 
 
@@ -107,23 +105,13 @@ def main():
     # Exact datasets used by preprocess / embedding / eval.
     selected_datasets = normalize_datasets(args.datasets)
 
-    # Physical datasets needed for download.
-    download_datasets = get_download_datasets(selected_datasets)
-
     args.datasets = selected_datasets
 
     print("Using config")
     print(json.dumps(config, indent=2))
 
     print(f"Selected run datasets: {', '.join(args.datasets)}")
-    print(f"Datasets needed for download: {', '.join(download_datasets)}")
     print(f"Selected models: {', '.join(args.models)}")
-
-    main_download(
-        config,
-        datasets=download_datasets,
-        physionet_user=args.physionet_user,
-    )
 
     main_preprocess(args, config)
 

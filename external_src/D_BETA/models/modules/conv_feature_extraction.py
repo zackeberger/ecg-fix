@@ -1,7 +1,7 @@
 from typing import List, Tuple
 import torch.nn as nn
 
-from D_BETA.models.modules import (
+from external_src.D_BETA.models.modules import (
     TransposeLast,
     Fp32LayerNorm,
     Fp32GroupNorm

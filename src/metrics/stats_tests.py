@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, roc_auc_score
 
-from src.metrics.utils import (
+from src.metrics.paths import (
     MODEL_DISPLAY_NAMES,
     MODEL_ORDER,
     metric_stats_path,
@@ -19,7 +19,6 @@ from src.metrics.utils import (
     safe_name,
 )
 
-DEFAULT_N_BOOT = 1000
 DEFAULT_N_PERM = 1000
 DEFAULT_ALPHA = 0.05
 
@@ -283,103 +282,6 @@ def _metric_label_on_indices(
     raise ValueError(f"Unknown metric: {metric}")
 
 
-def _stratified_bootstrap_label_indices(
-    y_true: np.ndarray,
-    label_idx: int,
-    rng: np.random.Generator,
-) -> np.ndarray | None:
-    pos_idx = np.flatnonzero(y_true[:, label_idx] == 1)
-    neg_idx = np.flatnonzero(y_true[:, label_idx] == 0)
-
-    if len(pos_idx) == 0 or len(neg_idx) == 0:
-        return None
-
-    bs_pos = rng.choice(pos_idx, size=len(pos_idx), replace=True)
-    bs_neg = rng.choice(neg_idx, size=len(neg_idx), replace=True)
-    return np.concatenate([bs_pos, bs_neg])
-
-
-def _stratified_bootstrap_diff_once(
-    y_true: np.ndarray,
-    y_pred_a: np.ndarray,
-    y_pred_b: np.ndarray,
-    metric: str,
-    label_idx: int | None,
-    rng: np.random.Generator,
-) -> float:
-    if label_idx is not None:
-        idx = _stratified_bootstrap_label_indices(y_true, label_idx, rng)
-
-        if idx is None:
-            return np.nan
-
-        a = _metric_label_on_indices(y_true, y_pred_a, metric, label_idx, idx)
-        b = _metric_label_on_indices(y_true, y_pred_b, metric, label_idx, idx)
-        return a - b
-
-    deltas = []
-
-    for i in _valid_label_indices(y_true):
-        idx = _stratified_bootstrap_label_indices(y_true, i, rng)
-
-        if idx is None:
-            continue
-
-        try:
-            a = _metric_label_on_indices(y_true, y_pred_a, metric, i, idx)
-            b = _metric_label_on_indices(y_true, y_pred_b, metric, i, idx)
-            delta = a - b
-
-            if np.isfinite(delta):
-                deltas.append(delta)
-        except Exception:
-            continue
-
-    if not deltas:
-        return np.nan
-
-    return float(np.mean(deltas))
-
-
-def _bootstrap_diff(
-    y_true: np.ndarray,
-    y_pred_a: np.ndarray,
-    y_pred_b: np.ndarray,
-    metric: str,
-    label_idx: int | None,
-    n_boot: int,
-    rng: np.random.Generator,
-) -> tuple[float, float, float]:
-    deltas = []
-
-    for _ in range(n_boot):
-        try:
-            delta = _stratified_bootstrap_diff_once(
-                y_true=y_true,
-                y_pred_a=y_pred_a,
-                y_pred_b=y_pred_b,
-                metric=metric,
-                label_idx=label_idx,
-                rng=rng,
-            )
-
-            if np.isfinite(delta):
-                deltas.append(delta)
-        except Exception:
-            continue
-
-    if not deltas:
-        return np.nan, np.nan, np.nan
-
-    deltas = np.asarray(deltas, dtype=float)
-
-    return (
-        float(np.mean(deltas)),
-        float(np.percentile(deltas, 2.5)),
-        float(np.percentile(deltas, 97.5)),
-    )
-
-
 def _permutation_test(
     y_true: np.ndarray,
     y_pred_a: np.ndarray,
@@ -479,7 +381,6 @@ def _compare_one_pair(job: dict) -> dict:
     model_a = job["model_a"]
     model_b = job["model_b"]
     label_idx = job["label_idx"]
-    n_boot = job["n_boot"]
     n_perm = job["n_perm"]
     alpha = job["alpha"]
     results_dir = job["results_dir"]
@@ -498,7 +399,6 @@ def _compare_one_pair(job: dict) -> dict:
         "metric": metric,
         "model_a": model_a,
         "model_b": model_b,
-        "bootstrap_diff": "---",
         "p_value": "---",
         "within_noise": "---",
         "sig": "---",
@@ -523,16 +423,6 @@ def _compare_one_pair(job: dict) -> dict:
             return base
 
 
-        boot_seed = _seed_from_job(
-            "bootstrap",
-            seed,
-            dataset,
-            train_pct,
-            target,
-            metric,
-            model_a,
-            model_b,
-        )
 
         perm_seed = _seed_from_job(
             "permutation",
@@ -545,18 +435,7 @@ def _compare_one_pair(job: dict) -> dict:
             model_b,
         )
 
-        boot_rng = np.random.default_rng(boot_seed)
         perm_rng = np.random.default_rng(perm_seed)
-
-        mean, lo, hi = _bootstrap_diff(
-            y_true=y_true,
-            y_pred_a=y_pred_a,
-            y_pred_b=y_pred_b,
-            metric=metric,
-            label_idx=label_idx,
-            n_boot=n_boot,
-            rng=boot_rng,
-        )
 
         _, p = _permutation_test(
             y_true=y_true,
@@ -568,9 +447,6 @@ def _compare_one_pair(job: dict) -> dict:
             rng=perm_rng,
         )
 
-        within_noise = None
-        if np.isfinite(lo) and np.isfinite(hi):
-            within_noise = bool(lo <= 0 <= hi)
 
         sig = None
         if np.isfinite(p):
@@ -578,9 +454,7 @@ def _compare_one_pair(job: dict) -> dict:
 
         base.update(
             {
-                "bootstrap_diff": _format_diff(mean, lo, hi),
                 "p_value": _format_p(p),
-                "within_noise": _format_bool(within_noise),
                 "sig": _format_bool(sig),
             }
         )
@@ -609,14 +483,9 @@ def _matrix_from_rows(rows: list[dict], value_key: str) -> pd.DataFrame:
         b = MODEL_DISPLAY_NAMES.get(row["model_b"], row["model_b"])
         value = row[value_key]
 
-        if value_key == "bootstrap_diff":
-            # Directional: row model minus column model.
-            df.loc[a, b] = value
-            df.loc[b, a] = _negate_formatted_diff(value)
-        else:
-            # p-values and boolean decisions are symmetric.
-            df.loc[a, b] = value
-            df.loc[b, a] = value
+        # p-values and boolean decisions are symmetric.
+        df.loc[a, b] = value
+        df.loc[b, a] = value
 
     return df
 
@@ -642,8 +511,6 @@ def _save_matrices(
 
     outputs = {
         "p_values": _matrix_from_rows(rows, "p_value"),
-        "bootstrap_diff": _matrix_from_rows(rows, "bootstrap_diff"),
-        "within_noise": _matrix_from_rows(rows, "within_noise"),
         f"sig_alpha_{safe_name(alpha)}": _matrix_from_rows(rows, "sig"),
     }
 
@@ -735,7 +602,6 @@ def _jobs_for_target(
     label_idx: int | None,
     best_model: str,
     metric: str,
-    n_boot: int,
     n_perm: int,
     alpha: float,
     seed: int,
@@ -760,7 +626,6 @@ def _jobs_for_target(
                 "metric": metric,
                 "model_a": best_model,
                 "model_b": other_model,
-                "n_boot": n_boot,
                 "n_perm": n_perm,
                 "alpha": alpha,
                 "seed": seed,
@@ -775,17 +640,12 @@ def export_stats_tests_for_run(
     dataset: str,
     train_pct: float,
     alpha: float = DEFAULT_ALPHA,
-    n_boot: int | None = None,
     n_perm: int | None = None,
 ) -> None:
     results_dir = config["results_dir"]
     comparison_dir = config["tables_dir"]
 
-    n_boot = int(
-        n_boot
-        if n_boot is not None
-        else config.get("stats_tests", {}).get("n_boot", DEFAULT_N_BOOT)
-    )
+
     n_perm = int(
         n_perm
         if n_perm is not None
@@ -814,7 +674,6 @@ def export_stats_tests_for_run(
                 label_idx=label_idx,
                 best_model=target_best_model,
                 metric=metric,
-                n_boot=n_boot,
                 n_perm=n_perm,
                 alpha=alpha,
                 seed=seed,
@@ -863,11 +722,9 @@ def export_stats_tests(
 
     Best model is selected dynamically from saved files using AUROC.
 
-    For each run, target, and metric, writes four CSVs:
+    For each run, target, and metric, writes two CSVs:
         1. p_values
-        2. bootstrap_diff
-        3. within_noise
-        4. sig_alpha_<alpha>
+        2. sig_alpha_<alpha>
 
     Metrics:
         auc
@@ -883,7 +740,6 @@ def export_stats_tests(
 
 
     alpha=float(config.get("stats_tests", {}).get("alpha", 0.05))
-    n_boot=int(config.get("stats_tests", {}).get("n_boot", 1000))
     n_perm=int(config.get("stats_tests", {}).get("n_perm", 1000))
 
     for dataset, train_pct in P_TEST_RUNS:
@@ -892,7 +748,6 @@ def export_stats_tests(
             dataset=dataset,
             train_pct=float(train_pct),
             alpha=alpha,
-            n_boot=n_boot,
             n_perm=n_perm,
         )
 

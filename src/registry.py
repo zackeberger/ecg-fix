@@ -1,6 +1,16 @@
 # src/registry.py
 
 CORE_MODELS = ["D_BETA", "MERL", "CLOCS", "HeartLang", "KED"]
+RANDOM_MODEL = "Random_500Hz_Z_score_none_No_Bandpass_Resnet18"
+
+MODEL_ORDER = [
+    RANDOM_MODEL,
+    "CLOCS",
+    "KED",
+    "HeartLang",
+    "MERL",
+    "D_BETA",
+]
 
 COARSE_DATASET_CHOICES = [
     "PTBXL",

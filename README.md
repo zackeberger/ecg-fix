@@ -23,6 +23,19 @@ Models and upstream code references:
 - KED / ECGFM-KED: https://github.com/control-spiderman/ECGFM-KED
 - HeartLang: https://github.com/PKUDigitalHealth/HeartLang
 
+## Repository Layout
+
+```text
+src/              Benchmark pipeline code.
+src/models/       Local model wrappers and embedding model factory.
+external_src/     Vendored upstream model source trees.
+scripts/          Dataset download helpers.
+model_weights/    Pretrained checkpoint files.
+data/             Raw, processed, and embedding data directories.
+results/          Linear-probe predictions, metrics, and done markers.
+metrics/          Exported CSV tables and statistical tests.
+```
+
 ## Setup
 
 Create and activate an environment from the repository root:
@@ -127,14 +140,19 @@ Download the released weights into the configured `model_weights_dir`:
 hf download doprakah/ecg-fix-weights --local-dir model_weights
 ```
 
-Expected checkpoint filenames:
+Expected checkpoint filenames, matching the actual files in `model_weights/`:
 
-- `dbeta_config.json`
-- `dbeta_best.pt`
-- `res18_best_encoder.pth`
-- `best_weights_clocs`
-- `ked.pt`
-- `heart.pth`
+| Model | File |
+| --- | --- |
+| D-BETA config | `dbeta_config.json` |
+| D-BETA weights | `dbeta_best.pt` |
+| MERL | `res18_best_encoder.pth` |
+| CLOCS | `best_weights_clocs` |
+| KED | `ked.pt` |
+| HeartLang | `heart.pth` |
+
+Use these filenames exactly. In particular, the CLOCS checkpoint is
+extensionless, while MERL and HeartLang use `.pth` and D-BETA/KED use `.pt`.
 
 ## Run Experiments
 
@@ -266,9 +284,10 @@ stratified bootstrap resampling by label: positives and negatives are sampled
 with replacement separately for each valid label. Macro bootstrap values average
 over labels that have both positive and negative examples.
 
-Metrics export code shares model ordering, display names, and result path
-helpers through `src/metrics/utils.py`. Update that file if you add or rename
-models that should appear in both result tables and statistical tests.
+Metrics export code shares result path and display-name helpers through
+`src/metrics/paths.py`. Canonical model ordering lives in `src/registry.py`;
+update it if you add or rename models that should appear in both result tables
+and statistical tests.
 
 To rerun a specific evaluation result, delete the corresponding model result
 folder, for example:

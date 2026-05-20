@@ -1,16 +1,6 @@
 import os
 
-
-RANDOM_MODEL = "Random_500Hz_Z_score_sample_No_Bandpass_Resnet18"
-
-MODEL_ORDER = [
-    RANDOM_MODEL,
-    "CLOCS",
-    "KED",
-    "HeartLang",
-    "MERL",
-    "D_BETA",
-]
+from src.registry import MODEL_ORDER, RANDOM_MODEL
 
 MODEL_DISPLAY_NAMES = {
     RANDOM_MODEL: "Random",

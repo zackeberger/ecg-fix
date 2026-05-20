@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 
 from src.metrics.stats_tests import export_stats_tests
-from src.metrics.utils import (
+from src.metrics.paths import (
     MODEL_DISPLAY_NAMES,
     MODEL_ORDER,
     RANDOM_MODEL,

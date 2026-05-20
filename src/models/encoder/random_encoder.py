@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 
-from models.encoder.resnet_merl import MerlResNet18
-from models.encoder.utils import (
+from src.models.encoder.resnet_merl import MerlResNet18
+from src.models.encoder.utils import (
     ButterBandpassFilter,
     ECGDatasetNormalize,
     ECGInterpolator,
     ECGNormalize,
 )
-from models.encoder.vit_merl import vit_middle
+from src.models.encoder.vit_merl import vit_middle
 
 
 class RandomEncoder(nn.Module):

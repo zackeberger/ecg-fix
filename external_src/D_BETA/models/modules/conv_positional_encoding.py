@@ -2,7 +2,7 @@ import math
 
 import torch.nn as nn
 
-from D_BETA.models.modules import (
+from external_src.D_BETA.models.modules import (
     SamePad,
 )
 

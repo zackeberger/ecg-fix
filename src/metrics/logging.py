@@ -8,7 +8,7 @@ import pickle
 import torch
 import numpy as np
 
-from src.metrics.utils import dataset_stats_path, metric_stats_path, model_result_dir, output_path
+from src.metrics.paths import dataset_stats_path, metric_stats_path, model_result_dir, output_path
 
 def save_outputs(args, y_true, y_pred, vocab):
     save_dict = {

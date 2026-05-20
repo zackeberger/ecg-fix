@@ -1,8 +1,8 @@
 {
   "raw_data_dir": "./data/raw",
   "processed_dir": "./data/processed",
-  "embeddings_dir": "./data/embeddings",
-  "results_dir": "./results",
+  "embeddings_dir": "/storage4/data/ecg_fix_temp/embeddings",
+  "results_dir": "/storage4/data/ecg_fix_temp/results",
   "tables_dir": "./metrics",
   "model_weights_dir": "./model_weights",
   "physionet_dir": "./physionet.org/files",

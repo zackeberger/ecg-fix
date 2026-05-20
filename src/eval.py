@@ -15,13 +15,18 @@ from types import SimpleNamespace
 
 from src.preprocess.load_embeddings import collect_embeddings, load_embeddings
 from src.metrics.logging import log_dataset_stats, log_metrics, save_outputs, save_stats
-from src.metrics.utils import dataset_stats_path, metric_stats_path, output_path, safe_name
+from src.metrics.paths import (
+    dataset_stats_path,
+    metric_stats_path,
+    output_path,
+    safe_name,
+)
 import json
 from src.registry import (
+    MODEL_ORDER,
     normalize_datasets,
-     normalize_models
+    normalize_models,
 )
-from src.utils import eval_config_hash
 import warnings
 from tqdm import tqdm
 from sklearn.exceptions import UndefinedMetricWarning
@@ -53,10 +58,17 @@ warnings.filterwarnings(
     category=UserWarning,
     module=r"sklearn\.metrics\._ranking",
 )
-
-
-
 mp.set_sharing_strategy("file_system")
+
+ALL_TRAIN_PCT_MODELS = frozenset(MODEL_ORDER)
+
+
+def should_eval_train_pct(model_name: str, train_pct: float) -> bool:
+    """
+    Models included in the paper tables are evaluated at every train percentage.
+    Any other model is evaluated only at full train size.
+    """
+    return train_pct == 1.0 or model_name in ALL_TRAIN_PCT_MODELS
 
 
 def split_clocs_views(X: np.ndarray):
@@ -173,7 +185,6 @@ def eval_is_done(args) -> bool:
         "model": args.model,
         "train_pct": args.train_pct,
         "seed": args.seed,
-        "config_hash": args.config_hash,
         "n_boot": args.n_boot,
     }
     for key, value in expected.items():
@@ -200,7 +211,6 @@ def mark_eval_done(args, summary: dict) -> None:
         "model": args.model,
         "train_pct": args.train_pct,
         "seed": args.seed,
-        "config_hash": args.config_hash,
         "n_boot": args.n_boot,
         **summary,
     }
@@ -385,7 +395,6 @@ def make_eval_args(cfg: dict):
         sklearn_n_jobs=cfg["sklearn_n_jobs"],
 
         seed=cfg["seed"],
-        config_hash=cfg["config_hash"],
     )
 
 
@@ -434,10 +443,9 @@ def main_eval(args, config):
     eval_batch_size = int(eval_cfg.get("batch_size", 256))
     eval_num_workers = int(eval_cfg.get("num_workers", 0))
     sklearn_n_jobs = int(eval_cfg.get("sklearn_n_jobs", 1))
-    n_boot=int(config.get("stats_tests", {}).get("n_boot", 1000))
+    n_boot = int(config.get("stats_tests", {}).get("n_boot", 1000))
 
     seed = int(config.get("seed", 42))
-    config_hash = eval_config_hash(config)
     max_workers = int(config.get("multi_process_eval", 1))
 
     print(f"Selected eval datasets: {selected_datasets}")
@@ -449,13 +457,15 @@ def main_eval(args, config):
     for dataset_name in selected_datasets:
         for model_name in selected_models:
             for train_pct in train_pcts:
+                if not should_eval_train_pct(model_name, train_pct):
+                    continue
+
                 cfg = {
                     "n_boot": n_boot,
                     "data": dataset_name,
                     "model": model_name,
                     "train_pct": float(train_pct),
                     "seed": seed,
-                    "config_hash": config_hash,
                     "results_dir": config["results_dir"],
                     "embeddings_dir": config["embeddings_dir"],
                     "batch_size": eval_batch_size,

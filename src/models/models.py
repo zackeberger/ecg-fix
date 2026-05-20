@@ -6,46 +6,26 @@ from types import SimpleNamespace
 import torch
 import torch.nn as nn
 
-from D_BETA.models.dbeta import DBETA
-from HeartLang.QRSTokenizer import QRSTokenizer
-from HeartLang.backbone_vqhbr import VqhbrBackbone
-from models.encoder.clocs import cnn_network_contrastive
-from models.encoder.random_encoder import RandomEncoder
-from models.encoder.resnet_merl import MerlResNet18
-from models.encoder.utils import ECGInterpolator, HeartLangNormalize
-_KED_PATH = Path(__file__).resolve().parents[1] / "ECGFM-KED" / "models" / "xresnet1d_101.py"
+from external_src.D_BETA.models.dbeta import DBETA
+from external_src.HeartLang.QRSTokenizer import QRSTokenizer
+from external_src.HeartLang.backbone_vqhbr import VqhbrBackbone
+from src.models.encoder.clocs import cnn_network_contrastive
+from src.models.encoder.random_encoder import RandomEncoder
+from src.models.encoder.resnet_merl import MerlResNet18
+from src.models.encoder.utils import ECGInterpolator, HeartLangNormalize
+from src.models.weights import get_weights_path
+
+_KED_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "external_src"
+    / "ECGFM-KED"
+    / "models"
+    / "xresnet1d_101.py"
+)
 _KED_SPEC = importlib.util.spec_from_file_location("ked_xresnet1d_101", _KED_PATH)
 _KED_MODULE = importlib.util.module_from_spec(_KED_SPEC)
 _KED_SPEC.loader.exec_module(_KED_MODULE)
 xresnet1d101 = _KED_MODULE.xresnet1d101
-
-
-def _resolve_weight_file(base_dir, preferred_name, legacy_names=()):
-    base = Path(base_dir)
-    candidates = [base / preferred_name, *(base / name for name in legacy_names)]
-    for path in candidates:
-        if path.exists():
-            return str(path)
-    return str(candidates[0])
-
-
-def get_weights_path(model_name, base_dir):
-    if model_name == "CLOCS":
-        path = _resolve_weight_file(base_dir, "best_weights_clocs")
-    elif model_name == "MERL":
-        path = _resolve_weight_file(base_dir, "res18_best_encoder.pth")
-    elif model_name == "KED":
-        path = _resolve_weight_file(base_dir, "ked.pt")
-    elif model_name == "HeartLang":
-        path = _resolve_weight_file(base_dir, "heart.pth")
-    elif model_name == "D_BETA":
-        config_path = _resolve_weight_file(base_dir, "dbeta_config.json")
-        checkpoint_path = _resolve_weight_file(base_dir, "dbeta_best.pt")
-        return config_path, checkpoint_path
-    else:
-        raise ValueError(f"Unknown model type: {model_name}")
-
-    return path
 
 
 def create_embedding_model(model_name, weights_dir):
