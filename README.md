@@ -1,10 +1,23 @@
-# [ICML 2026] Position: Evaluation of ECG Representations Must Be Fixed
+# Evaluation of ECG Representations Must Be Fixed
 
-[Paper](https://arxiv.org/pdf/2602.17531)
+### [Project Page](https://ecgfix.csail.mit.edu/) | [Paper](https://arxiv.org/pdf/2602.17531)
 
-This repository contains the ECG representation benchmark used to download and
-preprocess public ECG datasets, generate frozen model embeddings, train linear
-probes, and export metrics/statistical comparisons.
+Published in ICML 2026 position track.
+
+Authors:
+[Zachary Berger](https://zackberger.com/)\*,
+[Daniel Prakah-Asante](https://www.linkedin.com/in/daniel-prakah-asante)\*,
+[John Guttag](https://people.csail.mit.edu/guttag/),
+[Collin Stultz](https://hst.mit.edu/faculty-research/faculty/stultz-collin/)
+
+\*equal contribution
+
+This repo reproduces the results on the public datasets from our paper,
+["Position: Evaluation of ECG Representations Must Be Fixed"](https://arxiv.org/pdf/2602.17531).
+
+![Main figure](img/main.png)
+
+
 
 ## Sources
 
