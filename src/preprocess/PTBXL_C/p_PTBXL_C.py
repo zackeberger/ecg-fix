@@ -393,6 +393,3 @@ def main(config):
 
     print("\n✅ PTB-XL C export done for all 3 label types.")
 
-if __name__ == "__main__":
-    main()
-    
