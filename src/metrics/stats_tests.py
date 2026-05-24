@@ -20,7 +20,6 @@ from src.metrics.paths import (
 )
 
 DEFAULT_N_PERM = 1000
-DEFAULT_ALPHA = 0.05
 
 
 P_TEST_RUNS = [
@@ -382,7 +381,6 @@ def _compare_one_pair(job: dict) -> dict:
     model_b = job["model_b"]
     label_idx = job["label_idx"]
     n_perm = job["n_perm"]
-    alpha = job["alpha"]
     results_dir = job["results_dir"]
     seed = job["seed"]
 
@@ -400,8 +398,6 @@ def _compare_one_pair(job: dict) -> dict:
         "model_a": model_a,
         "model_b": model_b,
         "p_value": "---",
-        "within_noise": "---",
-        "sig": "---",
     }
 
     if obj_a is None or obj_b is None:
@@ -448,14 +444,9 @@ def _compare_one_pair(job: dict) -> dict:
         )
 
 
-        sig = None
-        if np.isfinite(p):
-            sig = bool(p <= alpha)
-
         base.update(
             {
                 "p_value": _format_p(p),
-                "sig": _format_bool(sig),
             }
         )
 
@@ -497,7 +488,6 @@ def _save_matrices(
     train_pct: float,
     target: str,
     metric: str,
-    alpha: float,
 ) -> None:
     out_dir = os.path.join(
         comparison_dir,
@@ -511,7 +501,6 @@ def _save_matrices(
 
     outputs = {
         "p_values": _matrix_from_rows(rows, "p_value"),
-        f"sig_alpha_{safe_name(alpha)}": _matrix_from_rows(rows, "sig"),
     }
 
     for name, df in outputs.items():
@@ -603,7 +592,6 @@ def _jobs_for_target(
     best_model: str,
     metric: str,
     n_perm: int,
-    alpha: float,
     seed: int,
 ) -> list[dict]:
     if best_model not in MODEL_ORDER:
@@ -627,7 +615,6 @@ def _jobs_for_target(
                 "model_a": best_model,
                 "model_b": other_model,
                 "n_perm": n_perm,
-                "alpha": alpha,
                 "seed": seed,
             }
         )
@@ -639,7 +626,6 @@ def export_stats_tests_for_run(
     config: dict,
     dataset: str,
     train_pct: float,
-    alpha: float = DEFAULT_ALPHA,
     n_perm: int | None = None,
 ) -> None:
     results_dir = config["results_dir"]
@@ -675,7 +661,6 @@ def export_stats_tests_for_run(
                 best_model=target_best_model,
                 metric=metric,
                 n_perm=n_perm,
-                alpha=alpha,
                 seed=seed,
             )
 
@@ -710,7 +695,6 @@ def export_stats_tests_for_run(
                 train_pct=train_pct,
                 target=target,
                 metric=metric,
-                alpha=alpha,
             )
 
 
@@ -722,9 +706,8 @@ def export_stats_tests(
 
     Best model is selected dynamically from saved files using AUROC.
 
-    For each run, target, and metric, writes two CSVs:
+    For each run, target, and metric, writes 1 CSV:
         1. p_values
-        2. sig_alpha_<alpha>
 
     Metrics:
         auc
@@ -739,7 +722,6 @@ def export_stats_tests(
     """
 
 
-    alpha=float(config.get("stats_tests", {}).get("alpha", 0.05))
     n_perm=int(config.get("stats_tests", {}).get("n_perm", 1000))
 
     for dataset, train_pct in P_TEST_RUNS:
@@ -747,7 +729,6 @@ def export_stats_tests(
             config=config,
             dataset=dataset,
             train_pct=float(train_pct),
-            alpha=alpha,
             n_perm=n_perm,
         )
 
