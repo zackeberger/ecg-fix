@@ -63,11 +63,17 @@ mp.set_sharing_strategy("file_system")
 ALL_TRAIN_PCT_MODELS = frozenset(MODEL_ORDER)
 
 
-def should_eval_train_pct(model_name: str, train_pct: float) -> bool:
+def should_eval_train_pct(model_name: str, dataset_name:str, train_pct: float) -> bool:
     """
     Models included in the paper tables are evaluated at every train percentage.
     Any other model is evaluated only at full train size.
     """
+    if dataset_name in ["PTBXL_C_form", "PTBXL_C_sub", "PTBXL_C_rhythm"]:
+        if train_pct != 1.0:
+            return False
+        if model_name not in ALL_TRAIN_PCT_MODELS:
+            return False
+
     return train_pct == 1.0 or model_name in ALL_TRAIN_PCT_MODELS
 
 
@@ -457,7 +463,7 @@ def main_eval(args, config):
     for dataset_name in selected_datasets:
         for model_name in selected_models:
             for train_pct in train_pcts:
-                if not should_eval_train_pct(model_name, train_pct):
+                if not should_eval_train_pct(model_name,dataset_name, train_pct):
                     continue
 
                 cfg = {
