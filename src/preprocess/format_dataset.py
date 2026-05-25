@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 from src.registry import get_preprocess_datasets
 
-
 SPLIT_ORDER = ("train", "val", "test")
 
 
@@ -148,15 +147,11 @@ def add_stratified_random_split(
     test_frac: Optional[float] = None,
 ) -> pd.DataFrame:
     """
-    Adds deterministic multilabel-stratified train/val/test split.
+    Reproducible split with minimum label coverage.
 
-    Goals:
-      1. Keep split sizes close to train_frac / val_frac / test_frac.
-      2. Ensure every label column has at least 1 positive sample in
-         train, val, and test.
-
-    Raises an error if any label has fewer than 3 positives, because then
-    it is impossible to place at least one positive in all three splits.
+    Procedure:
+      1. For every label, seed at least one positive example into train/val/test.
+      2. Randomly distribute all remaining rows while preserving target split sizes.
     """
     df = df.copy()
     n = len(df)
@@ -164,14 +159,16 @@ def add_stratified_random_split(
     if test_frac is None:
         test_frac = 1.0 - train_frac - val_frac
 
-    if n < 3:
-        raise RuntimeError("Need at least 3 rows to make train/val/test splits.")
-
     split_names = np.array(["train", "val", "test"], dtype=object)
     fracs = np.array([train_frac, val_frac, test_frac], dtype=float)
 
     if not np.isclose(fracs.sum(), 1.0):
         raise ValueError(f"Split fractions must sum to 1. Got {fracs.sum()}")
+
+    if n < 3:
+        raise RuntimeError("Need at least 3 rows for train/val/test split.")
+
+    rng = np.random.default_rng(seed)
 
     Y = (
         df[list(label_cols)]
@@ -184,157 +181,143 @@ def add_stratified_random_split(
     label_pos_counts = Y.sum(axis=0)
 
     zero_labels = [
-        label_cols[i]
-        for i, count in enumerate(label_pos_counts)
-        if count == 0
+        label_cols[j]
+        for j, c in enumerate(label_pos_counts)
+        if c == 0
     ]
+
     rare_labels = [
-        label_cols[i]
-        for i, count in enumerate(label_pos_counts)
-        if 0 < count < 3
+        label_cols[j]
+        for j, c in enumerate(label_pos_counts)
+        if 0 < c < 3
     ]
 
     if zero_labels:
         raise RuntimeError(
-            "These labels have 0 positives after filtering, so stratified "
-            f"train/val/test coverage is impossible: {zero_labels}"
+            "These labels have 0 positives, so coverage is impossible: "
+            f"{zero_labels}"
         )
 
     if rare_labels:
         raise RuntimeError(
-            "These labels have fewer than 3 positives after filtering, so at "
-            "least one positive in train/val/test is impossible: "
+            "These labels have fewer than 3 positives, so at least one positive "
+            "in train/val/test is impossible: "
             f"{rare_labels}"
         )
 
-    rng = np.random.default_rng(seed=seed)
-
-    # Target split sizes, rounded while preserving total n.
+    # Target split sizes.
     raw_sizes = fracs * n
     target_sizes = np.floor(raw_sizes).astype(int)
     remainder = n - int(target_sizes.sum())
 
     if remainder > 0:
-        add_order = np.argsort(-(raw_sizes - target_sizes))
-        for i in add_order[:remainder]:
-            target_sizes[i] += 1
-
-    # Make sure each split has at least one row when possible.
-    for i in range(3):
-        if target_sizes[i] == 0:
-            donor = int(np.argmax(target_sizes))
-            if target_sizes[donor] <= 1:
-                raise RuntimeError("Could not create non-empty train/val/test splits.")
-            target_sizes[donor] -= 1
-            target_sizes[i] += 1
+        order = np.argsort(-(raw_sizes - target_sizes))
+        for s in order[:remainder]:
+            target_sizes[s] += 1
 
     split_id = np.full(n, -1, dtype=int)
     current_sizes = np.zeros(3, dtype=int)
-    current_label_counts = np.zeros((3, len(label_cols)), dtype=int)
 
-    # Start with rare labels, because they are hardest to distribute.
+    # ------------------------------------------------------------------
+    # Step 1: seed one positive example per label into each split
+    # ------------------------------------------------------------------
+
+    # Rare labels first, because they are hardest to place.
     label_order = np.argsort(label_pos_counts)
 
-    # Fill smaller splits first so val/test receive rare positives.
-    split_fill_order = [1, 2, 0]  # val, test, train
-
     for label_idx in label_order:
-        for s in split_fill_order:
-            if current_label_counts[s, label_idx] > 0:
+        label_name = label_cols[label_idx]
+
+        for s in range(3):
+            # If this split already has this label because of a previous
+            # multilabel row, no need to add another one.
+            already_has_label = np.any(
+                (split_id == s) & (Y[:, label_idx] == 1)
+            )
+
+            if already_has_label:
                 continue
 
-            candidates = np.where((Y[:, label_idx] == 1) & (split_id == -1))[0]
+            candidates = np.where(
+                (split_id == -1) &
+                (Y[:, label_idx] == 1)
+            )[0]
 
             if len(candidates) == 0:
                 raise RuntimeError(
-                    "Could not assign label "
-                    f"{label_cols[label_idx]} to split {split_names[s]}. "
-                    "Try changing the seed or inspect overlapping rare labels."
+                    f"Could not seed label {label_name} into split "
+                    f"{split_names[s]}. Try a different seed or inspect "
+                    "highly overlapping rare labels."
                 )
 
-            # Prefer rows that cover many labels currently missing from this split.
-            missing_for_split = current_label_counts[s] == 0
-            coverage_score = (Y[candidates] * missing_for_split).sum(axis=1)
-
-            # Prefer rows carrying rarer labels.
-            rarity_score = (
-                Y[candidates] / np.maximum(label_pos_counts, 1)
-            ).sum(axis=1)
-
-            # Tiny deterministic random tie-breaker.
-            tie_break = rng.random(len(candidates)) * 1e-6
-
-            scores = 1000.0 * coverage_score + rarity_score + tie_break
-            chosen = int(candidates[int(np.argmax(scores))])
+            chosen = int(rng.choice(candidates))
 
             split_id[chosen] = s
             current_sizes[s] += 1
-            current_label_counts[s] += Y[chosen]
 
-    desired_label_counts = fracs[:, None] * label_pos_counts[None, :]
+    # ------------------------------------------------------------------
+    # Step 2: randomly distribute the remaining rows
+    # ------------------------------------------------------------------
 
     unassigned = np.where(split_id == -1)[0]
+    rng.shuffle(unassigned)
 
-    # Assign more label-rich / rare-label rows first.
-    row_rarity = (Y[unassigned] / np.maximum(label_pos_counts, 1)).sum(axis=1)
-    row_cardinality = Y[unassigned].sum(axis=1)
-    order_noise = rng.random(len(unassigned)) * 1e-6
+    remaining_capacity = target_sizes - current_sizes
 
-    assignment_order = unassigned[
-        np.lexsort((-order_noise, -row_rarity, -row_cardinality))
-    ]
+    if remaining_capacity.sum() != len(unassigned):
+        raise RuntimeError(
+            "Internal size mismatch: remaining split capacity does not match "
+            "number of unassigned rows."
+        )
 
-    for row_idx in assignment_order:
-        under_target = np.where(current_sizes < target_sizes)[0]
-        candidate_splits = under_target if len(under_target) > 0 else np.arange(3)
+    remaining_split_slots = np.concatenate([
+        np.full(remaining_capacity[s], s, dtype=int)
+        for s in range(3)
+    ])
 
-        row_labels = Y[row_idx] == 1
-        scores = []
+    rng.shuffle(remaining_split_slots)
 
-        for s in candidate_splits:
-            size_deficit = target_sizes[s] - current_sizes[s]
-            size_score = size_deficit / max(target_sizes[s], 1)
-
-            label_deficit = desired_label_counts[s] - current_label_counts[s]
-            label_score = label_deficit[row_labels].sum()
-
-            tie_break = rng.random() * 1e-6
-
-            # Size score is weighted strongly to stay close to target split sizes.
-            scores.append(100.0 * size_score + label_score + tie_break)
-
-        best_split = int(candidate_splits[int(np.argmax(scores))])
-
-        split_id[row_idx] = best_split
-        current_sizes[best_split] += 1
-        current_label_counts[best_split] += Y[row_idx]
+    split_id[unassigned] = remaining_split_slots
 
     df["split"] = split_names[split_id]
 
-    # Final safety check.
-    final_counts = {
-        split_names[s]: {
-            label_cols[j]: int(current_label_counts[s, j])
-            for j in range(len(label_cols))
-        }
-        for s in range(3)
-    }
+    # ------------------------------------------------------------------
+    # Final checks
+    # ------------------------------------------------------------------
 
-    bad = []
+    final_counts = np.vstack([
+        Y[split_id == s].sum(axis=0)
+        for s in range(3)
+    ])
+
+    missing = []
+
     for s in range(3):
         for j, col in enumerate(label_cols):
-            if current_label_counts[s, j] < 1:
-                bad.append((split_names[s], col))
+            if final_counts[s, j] < 1:
+                missing.append((split_names[s], col))
 
-    if bad:
+    if missing:
         raise RuntimeError(
-            "Stratified split failed to place at least one positive for "
-            f"each label in each split. Missing: {bad}"
+            "Final split is missing positive examples for some labels: "
+            f"{missing}"
         )
 
-    print("\nStratified split sizes:")
+    print("\nSplit sizes:")
     for s in range(3):
-        print(f"  {split_names[s]}: {current_sizes[s]} / target {target_sizes[s]}")
+        print(
+            f"  {split_names[s]}: "
+            f"{(split_id == s).sum()} / target {target_sizes[s]}"
+        )
+
+    print("\nLabel counts per split:")
+    for j, col in enumerate(label_cols):
+        print(
+            f"  {col:12s} "
+            f"train={final_counts[0, j]:5d} "
+            f"val={final_counts[1, j]:5d} "
+            f"test={final_counts[2, j]:5d}"
+        )
 
     return df
 
